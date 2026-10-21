@@ -30,7 +30,7 @@ async function createInvite() {
     if (error) throw error
     inviteLink.value = `https://t.me/${BOT_USERNAME}?start=inv_${code}`
     haptic('success')
-  } catch (e) { console.error(e); toast(t('error')) } finally { busy.value = false }
+  } catch (e) { console.error(e); toast(t('error', e)) } finally { busy.value = false }
 }
 function share() { shareLink(inviteLink.value, t('inviteText')) }
 async function copy() {
@@ -38,7 +38,7 @@ async function copy() {
 }
 async function revoke(m) {
   if (!(await confirmDialog(t('removeAccessQ', m.name)))) return
-  try { await remove('members', m.id) } catch (e) { console.error(e); toast(t('error')) }
+  try { await remove('members', m.id) } catch (e) { console.error(e); toast(t('error', e)) }
 }
 async function addPerson() {
   const name = newPerson.value.trim()
@@ -46,7 +46,7 @@ async function addPerson() {
   try {
     await save('members', { name, kind: 'child', role: 'none', color: 3 })
     newPerson.value = ''
-  } catch (e) { console.error(e); toast(t('error')) }
+  } catch (e) { console.error(e); toast(t('error', e)) }
 }
 async function rename(m, ev) {
   const name = ev.target.value.trim()

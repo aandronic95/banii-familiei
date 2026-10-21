@@ -49,7 +49,7 @@ async function pay(l) {
     }
     await save('loan_payments', { loan_id: l.id, n: n.n, amount: n.payment, paid_at: todayISO(), transaction_id: txId })
     haptic('success'); toast(t('loanPaid'))
-  } catch (e) { console.error(e); toast(t('error')) } finally { busy.value = false }
+  } catch (e) { console.error(e); toast(t('error', e)) } finally { busy.value = false }
 }
 </script>
 

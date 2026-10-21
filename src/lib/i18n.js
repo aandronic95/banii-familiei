@@ -10,12 +10,20 @@ export function setLang(l) {
   document.documentElement.lang = l
 }
 
+// Eroare de rețea: fără internet sau cererea n-a ajuns la server
+function isOffline(e) {
+  if (e === 'offline') return true
+  if (!e) return false
+  return (typeof navigator !== 'undefined' && !navigator.onLine) || /Failed to fetch|NetworkError|Load failed|FunctionsFetchError/i.test(String(e?.message || e?.name || e))
+}
+
 const D = {
   ro: {
     // navigație
     home: 'Acasă', accounts: 'Conturi', reports: 'Rapoarte', more: 'Mai mult', add: 'Adaugă',
     back: 'Înapoi', cancel: 'Anulează', save: 'Salvează', delete: 'Șterge', edit: 'Modifică', all: 'Toate', none: 'Niciunul',
-    loading: 'Se încarcă…', saved: 'Salvat', error: 'A apărut o eroare. Încearcă din nou.',
+    loading: 'Se încarcă…', saved: 'Salvat', error: (e) => isOffline(e) ? 'Nu e conexiune la internet. Verifică rețeaua și încearcă din nou.' : 'A apărut o eroare. Încearcă din nou.',
+    loanRequired: 'Completează numele, suma, termenul și data primei rate.',
     // poartă
     openInTelegram: 'Deschide aplicația din Telegram', openInTelegramText: 'Aplicația funcționează doar în Telegram, prin botul familiei.',
     openBot: 'Deschide botul', notAllowed: 'Nu ai acces încă', notAllowedText: 'Acest cont Telegram nu face parte din familie. Cere o invitație de la cel care a creat aplicația.',
@@ -23,6 +31,8 @@ const D = {
     retry: 'Încearcă din nou',
     // acasă
     hello: 'Bună', availableAll: 'Disponibil în toate conturile', month: 'Luna', debts: 'Datorii',
+    gTitle: 'Primii pași', gProgress: (a, b) => `${a} din ${b}`, gAccounts: 'Adaugă conturile și soldurile', gTx: 'Adaugă prima cheltuială',
+    gLoans: 'Adaugă creditele', gCar: 'Adaugă mașina', gInvite: 'Invită soția', gHide: 'Ascunde', quickAdd: 'Adăugare rapidă',
     monthBudget: 'Bugetul lunii', recentTx: 'Tranzacții recente', noTx: 'Încă nu ai tranzacții. Apasă + ca să adaugi prima.',
     loanDueIn: (n, d, a) => `${n}: ${a} se plătește ${d}`, inDays: (d) => d === 0 ? 'azi' : d === 1 ? 'mâine' : `peste ${d} zile`,
     left: (a) => `Mai ai ${a} MDL`, over: (a) => `Depășit cu ${a} MDL`, daysLeft: (d) => `${d} zile`,
@@ -76,12 +86,15 @@ const D = {
   ru: {
     home: 'Главная', accounts: 'Счета', reports: 'Отчёты', more: 'Ещё', add: 'Добавить',
     back: 'Назад', cancel: 'Отмена', save: 'Сохранить', delete: 'Удалить', edit: 'Изменить', all: 'Все', none: 'Нет',
-    loading: 'Загрузка…', saved: 'Сохранено', error: 'Произошла ошибка. Попробуйте ещё раз.',
+    loading: 'Загрузка…', saved: 'Сохранено', error: (e) => isOffline(e) ? 'Нет подключения к интернету. Проверьте сеть и попробуйте снова.' : 'Произошла ошибка. Попробуйте ещё раз.',
+    loanRequired: 'Заполните название, сумму, срок и дату первого платежа.',
     openInTelegram: 'Откройте приложение в Telegram', openInTelegramText: 'Приложение работает только в Telegram, через семейного бота.',
     openBot: 'Открыть бота', notAllowed: 'Доступа пока нет', notAllowedText: 'Этот аккаунт Telegram не входит в семью. Попросите приглашение у того, кто создал приложение.',
     yourId: 'Ваш Telegram ID', inviteBad: 'Приглашение недействительно', inviteBadText: 'Ссылка истекла или уже использована. Попросите новую.',
     retry: 'Повторить',
     hello: 'Привет', availableAll: 'Доступно на всех счетах', month: 'Месяц', debts: 'Долги',
+    gTitle: 'Первые шаги', gProgress: (a, b) => `${a} из ${b}`, gAccounts: 'Добавьте счета и остатки', gTx: 'Добавьте первый расход',
+    gLoans: 'Добавьте кредиты', gCar: 'Добавьте машину', gInvite: 'Пригласите супругу', gHide: 'Скрыть', quickAdd: 'Быстрое добавление',
     monthBudget: 'Бюджет месяца', recentTx: 'Последние операции', noTx: 'Операций пока нет. Нажмите +, чтобы добавить первую.',
     loanDueIn: (n, d, a) => `${n}: ${a} к оплате ${d}`, inDays: (d) => d === 0 ? 'сегодня' : d === 1 ? 'завтра' : `через ${d} дн.`,
     left: (a) => `Осталось ${a} MDL`, over: (a) => `Превышено на ${a} MDL`, daysLeft: (d) => `${d} дн.`,

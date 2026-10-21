@@ -84,3 +84,16 @@ test('cursul BNM se citește corect din XML (format real bnm.md)', { skip: !bnmT
   assert.deepEqual(bnmTs.parseBnmXml(xml), { EUR: 20.126, USD: 17.9568 })
   assert.deepEqual(bnmTs.parseBnmXml('<html>eroare</html>'), {})
 })
+
+test('calculatorul din câmpul sumă', async () => {
+  const { evalAmount, isExpression } = await import('../src/lib/calc.js')
+  assert.equal(evalAmount('150+35,5'), 185.5)
+  assert.equal(evalAmount('3×120'), 360)
+  assert.equal(evalAmount('1 000 − 250'), 750)
+  assert.equal(evalAmount('(100+20)/2'), 60)
+  assert.equal(evalAmount('385,50'), 385.5)
+  assert.equal(evalAmount('alert(1)'), null)
+  assert.equal(evalAmount('5+'), null)
+  assert.equal(isExpression('150+35'), true)
+  assert.equal(isExpression('150,35'), false)
+})

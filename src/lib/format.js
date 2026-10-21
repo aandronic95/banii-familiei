@@ -1,4 +1,5 @@
 import { lang } from './i18n.js'
+import { evalAmount, isExpression } from './calc.js'
 
 // 48 250,00 — spațiu la mii, virgulă la zecimale (la fel în ro și ru)
 export function money(n, decimals = 2) {
@@ -15,11 +16,13 @@ export function signed(n, kind) {
   return money(n)
 }
 
+// Acceptă și calcule simple: „150+35,5”, „3×120”
 export function parseAmount(s) {
   if (typeof s === 'number') return s
-  const v = parseFloat(String(s || '').replace(/[\s ]/g, '').replace(',', '.'))
-  return isFinite(v) ? Math.round(v * 100) / 100 : 0
+  const v = evalAmount(s)
+  return v !== null ? Math.round(v * 100) / 100 : 0
 }
+export { evalAmount, isExpression }
 
 export function todayISO() {
   const d = new Date()

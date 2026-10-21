@@ -6,6 +6,7 @@ import { todayISO } from './lib/format.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
+  errorText: '',
   tgId: null,
   userId: null,
   family: null,
@@ -33,6 +34,9 @@ export async function start() {
   S.tgId = tg.initDataUnsafe?.user?.id ?? null
   const invite = new URLSearchParams(location.search).get('invite') || ''
   try {
+    // Deschidere rapidă: refolosim sesiunea salvată dacă e a aceluiași cont Telegram.
+    // Dacă accesul a fost scos între timp, RLS nu mai dă date și trecem la login complet.
+    if (!invite && (await resumeSession())) return
     const { data, error } = await supabase.functions.invoke('tg-auth', { body: { initData: tg.initData, invite } })
     if (error) {
       let body = {}
@@ -45,14 +49,46 @@ export async function start() {
     if (e2) throw e2
     S.userId = sess.user.id
     if (invite) history.replaceState(null, '', location.pathname)
-    await loadAll()
-    subscribe()
-    S.status = 'ready'
-    if (S.rateDates.EUR !== todayISO() || S.rateDates.USD !== todayISO()) refreshRates().catch((e) => console.warn('curs BNM', e))
+    await afterLogin()
   } catch (e) {
     console.error(e)
+    S.errorText = describeError(e)
     S.status = 'error'
   }
+}
+
+async function resumeSession() {
+  try {
+    const { data } = await supabase.auth.getSession()
+    const u = data.session?.user
+    if (!u || Number(u.user_metadata?.telegram_id) !== Number(S.tgId)) return false
+    S.userId = u.id
+    await afterLogin()
+    return true
+  } catch (_) {
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
+    return false
+  }
+}
+
+async function afterLogin() {
+  await loadAll()
+  subscribe()
+  S.status = 'ready'
+  if (S.rateDates.EUR !== todayISO() || S.rateDates.USD !== todayISO()) refreshRates().catch((e) => console.warn('curs BNM', e))
+}
+
+// Reîncarcă datele când aplicația revine în prim-plan (conexiunea live se poate pierde în fundal)
+let lastLoad = 0
+export async function refreshIfStale(maxAgeMs = 30000) {
+  if (S.status !== 'ready' || Date.now() - lastLoad < maxAgeMs) return
+  try { await loadAll(); subscribe() } catch (e) { console.warn('reîncărcare', e) }
+}
+
+export function describeError(e) {
+  const msg = String(e?.message || e || '')
+  if (!navigator.onLine || /Failed to fetch|NetworkError|Load failed/i.test(msg)) return 'offline'
+  return 'generic'
 }
 
 async function fetchAll(table, order = 'id') {
@@ -80,6 +116,7 @@ export async function loadAll() {
     supabase.from('rates').select('*').order('date', { ascending: false }).limit(20),
   ])
   if (fam.error) throw fam.error
+  lastLoad = Date.now()
   Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents })
   for (const r of rates.data || []) {
     if (!S.rateDates[r.currency]) { S.rates[r.currency] = Number(r.rate); S.rateDates[r.currency] = r.date }
@@ -131,8 +168,11 @@ export async function remove(table, id) {
 
 export async function uploadReceipt(file) {
   const blob = await compressImage(file)
-  const path = `${S.family.id}/${crypto.randomUUID ? crypto.randomUUID() : Date.now()}.jpg`
-  const { error } = await supabase.storage.from('receipts').upload(path, blob, { contentType: 'image/jpeg' })
+  // Dacă poza n-a putut fi convertită (ex. HEIC pe unele telefoane), se urcă așa cum e
+  const type = blob.type || file.type || 'image/jpeg'
+  const ext = { 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic' }[type] || 'jpg'
+  const path = `${S.family.id}/${crypto.randomUUID ? crypto.randomUUID() : Date.now()}.${ext}`
+  const { error } = await supabase.storage.from('receipts').upload(path, blob, { contentType: type })
   if (error) throw error
   return path
 }

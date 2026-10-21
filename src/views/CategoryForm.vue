@@ -26,7 +26,7 @@ async function submit() {
       budget: f.kind === 'expense' && parseAmount(f.budget) > 0 ? parseAmount(f.budget) : null,
     })
     haptic('success'); router.back()
-  } catch (e) { console.error(e); err.value = t('error') }
+  } catch (e) { console.error(e); err.value = t('error', e) }
 }
 async function archive() {
   await save('categories', { id: orig.id, archived: true }); router.back()

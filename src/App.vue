@@ -1,8 +1,8 @@
 <script setup>
 import { onMounted, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, start } from './store.js'
-import { initTelegram, setBack, setChrome, BOT_USERNAME } from './lib/telegram.js'
+import { S, start, refreshIfStale } from './store.js'
+import { tg, initTelegram, setBack, setChrome, BOT_USERNAME } from './lib/telegram.js'
 import { t, lang } from './lib/i18n.js'
 import TabBar from './components/TabBar.vue'
 import { toastText } from './components/Toast.js'
@@ -21,11 +21,16 @@ onMounted(() => {
   document.documentElement.lang = lang.value
   initTelegram(applyTheme)
   start()
+  // Datele se reîncarcă când aplicația revine din fundal
+  tg?.onEvent?.('activated', () => refreshIfStale())
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshIfStale() })
 })
 
 watch(() => [route.fullPath, S.status], () => {
   const root = route.meta.tab
   setBack(!root && S.status === 'ready', () => router.back())
+  // Pe formulare, Telegram cere confirmare înainte de închidere, ca să nu se piardă ce ai scris
+  try { route.meta.form ? tg?.enableClosingConfirmation?.() : tg?.disableClosingConfirmation?.() } catch (_) {}
 }, { immediate: true })
 </script>
 
@@ -60,7 +65,7 @@ watch(() => [route.fullPath, S.status], () => {
 
   <div v-else-if="S.status === 'error'" class="gate">
     <div>
-      <p class="muted">{{ t('error') }}</p>
+      <p class="muted">{{ t('error', S.errorText) }}</p>
       <button class="bf-btn bf-btn--primary" @click="start">{{ t('retry') }}</button>
     </div>
   </div>

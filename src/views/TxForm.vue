@@ -3,7 +3,7 @@ import { reactive, ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
-import { parseAmount, todayISO, money } from '../lib/format.js'
+import { parseAmount, todayISO, money, isExpression } from '../lib/format.js'
 import { confirmDialog, haptic } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
@@ -21,7 +21,7 @@ const carCat = S.categories.find((c) => c.kind === 'expense' && c.icon === 'car'
 const f = reactive({
   kind: orig?.kind ?? route.query.kind ?? 'expense',
   amount: orig ? String(orig.amount).replace('.', ',') : '',
-  category_id: orig?.category_id ?? (route.query.car ? carCat?.id : '') ?? '',
+  category_id: orig?.category_id ?? route.query.category ?? (route.query.car ? carCat?.id : '') ?? '',
   member_id: orig?.member_id ?? me.value?.id ?? '',
   account_id: orig?.account_id ?? defaultAcc,
   to_account_id: orig?.to_account_id ?? '',
@@ -31,7 +31,7 @@ const f = reactive({
   note: orig?.note ?? '',
   receipt_path: orig?.receipt_path ?? null,
   car_id: orig?.car_id ?? (route.query.car || S.cars[0]?.id || null),
-  car_kind: orig?.car_kind ?? (route.query.fuel ? 'fuel' : 'fuel'),
+  car_kind: orig?.car_kind ?? 'fuel',
   fuel_liters: orig?.fuel_liters ? String(orig.fuel_liters).replace('.', ',') : '',
   odometer: orig?.odometer ?? '',
   full_tank: orig?.full_tank ?? true,
@@ -41,7 +41,19 @@ const err = ref('')
 const receiptPreview = ref('')
 const fileInput = ref(null)
 
-onMounted(async () => { if (f.receipt_path) receiptPreview.value = await receiptUrl(f.receipt_path) })
+const amtInput = ref(null)
+onMounted(async () => {
+  if (isNew) setTimeout(() => amtInput.value?.focus(), 250)
+  if (f.receipt_path) receiptPreview.value = await receiptUrl(f.receipt_path)
+})
+// Calcul în câmpul sumă: „150+35” → 185,00
+const calcResult = computed(() => (isExpression(f.amount) ? parseAmount(f.amount) : null))
+function addOp(op) {
+  const v = String(f.amount || '').trim()
+  if (!v) return
+  f.amount = /[+−×÷]$/.test(v) ? v.slice(0, -1) + op : v + op
+  amtInput.value?.focus()
+}
 
 const cats = computed(() => S.categories.filter((c) => c.kind === (f.kind === 'income' ? 'income' : 'expense') && !c.archived))
 watch(() => f.kind, () => { if (!cats.value.some((c) => c.id === f.category_id)) f.category_id = '' })
@@ -59,7 +71,7 @@ async function pickFile(e) {
   try {
     receiptPreview.value = URL.createObjectURL(file)
     f.receipt_path = await uploadReceipt(file)
-  } catch (e2) { console.error(e2); err.value = t('error'); receiptPreview.value = '' } finally { busy.value = false; e.target.value = '' }
+  } catch (e2) { console.error(e2); err.value = t('error', e2); receiptPreview.value = '' } finally { busy.value = false; e.target.value = '' }
 }
 function dropReceipt() { f.receipt_path = null; receiptPreview.value = '' }
 
@@ -87,7 +99,7 @@ async function submit() {
     if (orig?.receipt_path && orig.receipt_path !== row.receipt_path) supabase.storage.from('receipts').remove([orig.receipt_path])
     await save('transactions', row)
     haptic('success'); toast(t('saved')); router.back()
-  } catch (e) { console.error(e); err.value = t('error'); haptic('error') } finally { busy.value = false }
+  } catch (e) { console.error(e); err.value = t('error', e); haptic('error') } finally { busy.value = false }
 }
 
 async function del() {
@@ -96,7 +108,7 @@ async function del() {
     await remove('transactions', orig.id)
     if (orig.receipt_path) supabase.storage.from('receipts').remove([orig.receipt_path])
     router.back()
-  } catch (e) { console.error(e); err.value = t('error') }
+  } catch (e) { console.error(e); err.value = t('error', e) }
 }
 </script>
 
@@ -111,10 +123,14 @@ async function del() {
     <div style="text-align: center;">
       <label for="amt" class="muted" style="font: 600 13px/18px var(--font-sans);">{{ t('amount') }}</label>
       <div style="display: flex; align-items: baseline; justify-content: center; gap: 8px; margin-top: 4px;">
-        <input id="amt" v-model="f.amount" inputmode="decimal" placeholder="0" autocomplete="off"
-               style="font: 700 44px/52px var(--font-sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--ink); background: transparent; border: 0; width: 220px; text-align: right; outline: none;">
+        <input id="amt" ref="amtInput" v-model="f.amount" inputmode="decimal" placeholder="0" autocomplete="off" enterkeyhint="done"
+               :style="{ font: `700 ${String(f.amount).length > 9 ? 32 : 44}px/52px var(--font-sans)`, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', color: 'var(--ink)', background: 'transparent', border: 0, width: '220px', textAlign: 'right', outline: 'none' }">
         <span class="bf-chip">{{ acc?.currency || 'MDL' }}</span>
       </div>
+      <div class="amt-tools">
+        <button v-for="op in ['+', '−', '×', '÷']" :key="op" type="button" class="amt-op" :aria-label="op" @click="addOp(op)">{{ op }}</button>
+      </div>
+      <div v-if="calcResult !== null" class="cap" style="margin-top: 6px;" aria-live="polite">= {{ money(calcResult) }} {{ acc?.currency || 'MDL' }}</div>
     </div>
 
     <div v-if="f.kind !== 'transfer'" class="fld">

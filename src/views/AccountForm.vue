@@ -43,7 +43,7 @@ async function submit() {
       archived: f.archived,
     })
     haptic('success'); toast(t('saved')); router.back()
-  } catch (e) { console.error(e); err.value = t('error') } finally { busy.value = false }
+  } catch (e) { console.error(e); err.value = t('error', e) } finally { busy.value = false }
 }
 
 async function del() {

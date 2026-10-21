@@ -1,9 +1,9 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, accountById, balances, categoryById } from '../store.js'
+import { S, accountById, balances, categoryById, toMdl, txCurrency } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
-import { money, dateLong } from '../lib/format.js'
+import { money, money0, dateLong } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
 import Icon from '../components/Icon.vue'
 
@@ -30,8 +30,10 @@ const groups = computed(() => {
   const out = []
   for (const x of list.value.slice(0, limit.value)) {
     const last = out[out.length - 1]
-    if (last && last.date === x.date) last.items.push(x)
-    else out.push({ date: x.date, items: [x] })
+    const g = last && last.date === x.date ? last : (out.push({ date: x.date, items: [], exp: 0, inc: 0 }), out[out.length - 1])
+    g.items.push(x)
+    if (x.kind === 'expense') g.exp += toMdl(x.amount, txCurrency(x))
+    if (x.kind === 'income') g.inc += toMdl(x.amount, txCurrency(x))
   }
   return out
 })
@@ -57,7 +59,12 @@ const groups = computed(() => {
     </div>
 
     <section v-for="g in groups" :key="g.date">
-      <div class="bf-list__head">{{ dateLong(g.date) }}</div>
+      <div class="bf-list__head" style="display: flex; justify-content: space-between; gap: 8px;">
+        <span>{{ dateLong(g.date) }}</span>
+        <span style="text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums;">
+          <span v-if="g.inc" class="bf-income">+{{ money0(g.inc) }}</span><span v-if="g.inc && g.exp"> · </span><span v-if="g.exp">−{{ money0(g.exp) }}</span>
+        </span>
+      </div>
       <div class="bf-list"><TxRow v-for="x in g.items" :key="x.id" :tx="x" /></div>
     </section>
     <div v-if="!list.length" class="bf-card empty">{{ t('noTx') }}</div>

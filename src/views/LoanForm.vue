@@ -31,7 +31,7 @@ const preview = computed(() => {
 async function submit() {
   err.value = ''
   const P = parseAmount(f.principal), n = parseInt(f.term_months)
-  if (!f.name.trim() || !(P > 0) || !(n > 0) || !f.first_due) { err.value = t('error'); return }
+  if (!f.name.trim() || !(P > 0) || !(n > 0) || !f.first_due) { err.value = t('loanRequired'); return }
   busy.value = true
   try {
     await save('loans', {
@@ -42,7 +42,7 @@ async function submit() {
       account_id: f.account_id || null, closed: !!f.closed,
     })
     haptic('success'); toast(t('saved')); router.back()
-  } catch (e) { console.error(e); err.value = t('error') } finally { busy.value = false }
+  } catch (e) { console.error(e); err.value = t('error', e) } finally { busy.value = false }
 }
 async function del() {
   if (!(await confirmDialog(t('delete') + '?'))) return

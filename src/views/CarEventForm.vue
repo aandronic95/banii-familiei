@@ -27,7 +27,7 @@ async function submit() {
       due_date: f.due_date || null, due_km: parseInt(String(f.due_km).replace(/\D/g, '')) || null, amount: parseAmount(f.amount) || null, done: false,
     })
     haptic('success'); router.back()
-  } catch (e) { console.error(e); err.value = t('error') }
+  } catch (e) { console.error(e); err.value = t('error', e) }
 }
 async function del() {
   if (!(await confirmDialog(t('delete') + '?'))) return

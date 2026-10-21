@@ -17,7 +17,7 @@ async function submit() {
   try {
     await save('cars', { ...(orig ? { id: orig.id } : {}), name: f.name.trim(), plate: f.plate.trim() || null, odometer_start: parseInt(String(f.odometer_start).replace(/\D/g, '')) || 0 })
     haptic('success'); router.back()
-  } catch (e) { console.error(e); err.value = t('error') }
+  } catch (e) { console.error(e); err.value = t('error', e) }
 }
 async function del() {
   if (!(await confirmDialog(t('delete') + '?'))) return
