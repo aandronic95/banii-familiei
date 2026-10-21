@@ -1,0 +1,73 @@
+/* Banii Familiei — component classes. Read tokens only. */
+.bf { font-family: var(--font-sans); color: var(--ink); -webkit-font-smoothing: antialiased; }
+.bf-num { font-variant-numeric: tabular-nums; }
+
+/* Button */
+.bf-btn { font: 600 15px/20px var(--font-sans); min-height: 48px; padding: 0 var(--space-4); border: 0; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); cursor: pointer; }
+.bf-btn--primary { background: var(--brand); color: var(--brand-ink); }
+.bf-btn--secondary { background: var(--surface-2); color: var(--ink); }
+.bf-btn--ghost { background: transparent; color: var(--brand); }
+.bf-btn--danger { background: var(--danger-soft); color: var(--danger); }
+.bf-btn--block { width: 100%; }
+.bf-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Card */
+.bf-card { background: var(--surface); border-radius: var(--radius-lg); padding: var(--space-4); box-shadow: var(--shadow-card); }
+
+/* BalanceCard */
+.bf-balance__label { font: 600 13px/18px var(--font-sans); color: var(--ink-muted); }
+.bf-balance__amount { font: 700 34px/40px var(--font-sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: var(--space-1); }
+.bf-balance__cur { font-size: 20px; font-weight: 600; color: var(--ink-muted); margin-left: var(--space-1); }
+.bf-balance__meta { display: flex; gap: var(--space-4); margin-top: var(--space-3); font: 500 13px/18px var(--font-sans); color: var(--ink-muted); }
+.bf-balance__meta b { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Amount colors */
+.bf-income { color: var(--income); }
+.bf-expense { color: var(--expense); }
+
+/* ListSection */
+.bf-list { background: var(--surface); border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-card); }
+.bf-list__head { font: 600 13px/18px var(--font-sans); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); padding: 0 var(--space-4) var(--space-2); }
+.bf-row { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); min-height: 44px; position: relative; }
+.bf-row + .bf-row::before { content: ""; position: absolute; top: 0; left: 64px; right: 0; height: 1px; background: var(--line); }
+.bf-row__icon { width: 36px; height: 36px; flex: none; border-radius: var(--radius-sm); background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; }
+.bf-row__body { flex: 1; min-width: 0; }
+.bf-row__title { font: 500 15px/22px var(--font-sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bf-row__sub { font: 500 12px/16px var(--font-sans); color: var(--ink-muted); }
+.bf-row__amount { font: 600 15px/20px var(--font-sans); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.bf-row__amount small { display: block; font: 500 12px/16px var(--font-sans); color: var(--ink-muted); }
+
+/* Avatar dot for person */
+.bf-dot { display: inline-block; width: 8px; height: 8px; border-radius: var(--radius-pill); margin-right: var(--space-1); vertical-align: 1px; }
+.bf-p1 { background: var(--person-1); } .bf-p2 { background: var(--person-2); } .bf-p3 { background: var(--person-3); }
+
+/* BudgetProgress */
+.bf-budget__top { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-2); }
+.bf-budget__name { font: 500 15px/22px var(--font-sans); }
+.bf-budget__nums { font: 600 13px/18px var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink-muted); }
+.bf-bar { height: 8px; border-radius: var(--radius-pill); background: var(--surface-2); margin-top: var(--space-2); overflow: hidden; }
+.bf-bar > i { display: block; height: 100%; border-radius: var(--radius-pill); background: var(--brand); }
+.bf-bar--warn > i { background: var(--warning); }
+.bf-bar--over > i { background: var(--danger); }
+.bf-budget__note { font: 500 12px/16px var(--font-sans); color: var(--ink-muted); margin-top: var(--space-1); }
+.bf-budget__note--warn { color: var(--warning); }
+.bf-budget__note--over { color: var(--danger); }
+
+/* Chip */
+.bf-chips { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.bf-chip { font: 600 13px/18px var(--font-sans); height: 32px; padding: 0 var(--space-3); border-radius: var(--radius-pill); border: 0; background: var(--surface-2); color: var(--ink); display: inline-flex; align-items: center; gap: var(--space-1); }
+.bf-chip--on { background: var(--brand-soft); color: var(--brand); box-shadow: inset 0 0 0 1.5px var(--brand); }
+
+/* TabBar */
+.bf-tabbar { display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; background: var(--surface); box-shadow: var(--shadow-sheet); padding: var(--space-2) var(--space-2) var(--space-3); }
+.bf-tab { display: flex; flex-direction: column; align-items: center; gap: 2px; font: 600 11px/14px var(--font-sans); color: var(--ink-muted); min-height: 44px; justify-content: center; }
+.bf-tab--on { color: var(--brand); }
+.bf-tab--add { justify-self: center; width: 52px; height: 52px; border-radius: var(--radius-pill); background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; }
+
+/* Banner */
+.bf-banner { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); background: var(--warning-soft); color: var(--ink); font: 500 13px/18px var(--font-sans); }
+.bf-banner svg { color: var(--warning); flex: none; }
+.bf-banner--danger { background: var(--danger-soft); }
+.bf-banner--danger svg { color: var(--danger); }
+
+.bf-icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }

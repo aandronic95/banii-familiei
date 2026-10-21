@@ -1,0 +1,94 @@
+name: Publicare
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  PROJECT_REF: ecfehopapvxngnxecetg
+  BOT_USERNAME: andronicfambot
+
+jobs:
+  # 1. Aplicația Vue → GitHub Pages
+  pages:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  # 2. Baza de date, funcțiile serverului și botul Telegram
+  backend:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      OWNER_TELEGRAM_ID: ${{ secrets.OWNER_TELEGRAM_ID }}
+      APP_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
+    steps:
+      - name: Verifică secretele
+        run: |
+          missing=""
+          for v in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD TELEGRAM_BOT_TOKEN; do
+            [ -z "${!v}" ] && missing="$missing $v"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Lipsesc secretele din GitHub (Settings → Secrets and variables → Actions):$missing"
+            exit 1
+          fi
+          [ -z "$OWNER_TELEGRAM_ID" ] && echo "::warning::OWNER_TELEGRAM_ID lipsește: aplicația îți va arăta ID-ul, apoi adaugă-l și rulează din nou."
+          true
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Leagă proiectul Supabase
+        run: supabase link --project-ref "$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD"
+      - name: Aplică schema bazei de date
+        run: supabase db push -p "$SUPABASE_DB_PASSWORD"
+      - name: Setează secretele serverului
+        run: |
+          supabase secrets set --project-ref "$PROJECT_REF" \
+            TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
+            OWNER_TELEGRAM_ID="${OWNER_TELEGRAM_ID:-0}" \
+            APP_URL="$APP_URL"
+      - name: Publică funcțiile
+        run: supabase functions deploy --project-ref "$PROJECT_REF"
+      - name: Configurează botul Telegram
+        run: |
+          API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
+          WEBHOOK_SECRET=$(printf 'webhook:%s' "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-48)
+          curl -sf "$API/setWebhook" -H 'content-type: application/json' \
+            -d "{\"url\":\"https://${PROJECT_REF}.supabase.co/functions/v1/bot\",\"secret_token\":\"${WEBHOOK_SECRET}\",\"allowed_updates\":[\"message\"]}" > /dev/null
+          curl -sf "$API/setChatMenuButton" -H 'content-type: application/json' \
+            -d "{\"menu_button\":{\"type\":\"web_app\",\"text\":\"Deschide\",\"web_app\":{\"url\":\"${APP_URL}\"}}}" > /dev/null
+          curl -sf "$API/setMyCommands" -H 'content-type: application/json' \
+            -d '{"commands":[{"command":"start","description":"Deschide aplicația"},{"command":"id","description":"Arată ID-ul tău Telegram"}]}' > /dev/null
+          echo "Bot configurat: https://t.me/${BOT_USERNAME}"

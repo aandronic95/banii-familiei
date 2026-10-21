@@ -1,0 +1,26 @@
+name: Notificări
+
+on:
+  schedule:
+    - cron: '0 6 * * *'    # zilnic, ~09:00 la Chișinău (vara) / 08:00 (iarna)
+    - cron: '0 16 * * 0'   # duminică, ~19:00 / 18:00: rezumatul săptămânii
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'daily sau weekly'
+        default: daily
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - name: Trimite notificările
+        run: |
+          TASK="${{ github.event.inputs.task }}"
+          if [ -z "$TASK" ]; then
+            [ "${{ github.event.schedule }}" = "0 16 * * 0" ] && TASK=weekly || TASK=daily
+          fi
+          SECRET=$(printf 'cron:%s' "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-48)
+          curl -sf -X POST "https://ecfehopapvxngnxecetg.supabase.co/functions/v1/notify?task=${TASK}" -H "x-cron-secret: ${SECRET}"

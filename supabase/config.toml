@@ -1,0 +1,12 @@
+project_id = "ecfehopapvxngnxecetg"
+
+# Funcțiile își fac singure verificarea: semnătura Telegram (tg-auth),
+# secretul webhook-ului (bot) și secretul programării (notify).
+[functions.tg-auth]
+verify_jwt = false
+
+[functions.bot]
+verify_jwt = false
+
+[functions.notify]
+verify_jwt = false
