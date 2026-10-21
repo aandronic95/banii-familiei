@@ -48,6 +48,7 @@ export async function start() {
     await loadAll()
     subscribe()
     S.status = 'ready'
+    if (S.rateDates.EUR !== todayISO() || S.rateDates.USD !== todayISO()) refreshRates().catch((e) => console.warn('curs BNM', e))
   } catch (e) {
     console.error(e)
     S.status = 'error'
@@ -152,6 +153,17 @@ async function compressImage(file, max = 1600) {
   } catch (_) {
     return file
   }
+}
+
+// Cursul BNM prin server (browserul nu poate citi direct de pe bnm.md).
+// Fără dată: cursul de azi, care devine și cursul folosit la conversii.
+export async function refreshRates(date) {
+  const { data, error } = await supabase.functions.invoke('rates', { body: date ? { date } : {} })
+  if (error) throw error
+  if (!date) {
+    for (const [c, r] of Object.entries(data.rates || {})) { S.rates[c] = Number(r); S.rateDates[c] = data.date }
+  }
+  return data
 }
 
 export async function setRate(currency, rate) {

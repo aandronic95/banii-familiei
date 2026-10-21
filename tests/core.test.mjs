@@ -73,3 +73,14 @@ test('logica de credit e identică în aplicație și pe server', { skip: !loanT
   const l = { principal: 64300, annual_rate: 14.9, term_months: 24, first_due: '2026-11-10', monthly_payment: 3250 }
   assert.deepEqual(loanTs.schedule(l), schedule(l))
 })
+
+const bnmTs = await import('../supabase/functions/_shared/bnm.ts').catch(() => null)
+test('cursul BNM se citește corect din XML (format real bnm.md)', { skip: !bnmTs }, () => {
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><ValCurs Date="21.10.2026" name="Cursul oficial de schimb">
+  <Valute ID="47"><NumCode>978</NumCode><CharCode>EUR</CharCode><Nominal>1</Nominal><Name>Euro</Name><Value>20.1260</Value></Valute>
+  <Valute ID="44"><NumCode>840</NumCode><CharCode>USD</CharCode><Nominal>1</Nominal><Name>Dolar S.U.A.</Name><Value>17.9568</Value></Valute>
+  <Valute ID="36"><NumCode>643</NumCode><CharCode>RUB</CharCode><Nominal>1</Nominal><Name>Rubla</Name><Value>0.2201</Value></Valute>
+  <Valute ID="5"><NumCode>348</NumCode><CharCode>HUF</CharCode><Nominal>100</Nominal><Name>Forint</Name><Value>5.1000</Value></Valute></ValCurs>`
+  assert.deepEqual(bnmTs.parseBnmXml(xml), { EUR: 20.126, USD: 17.9568 })
+  assert.deepEqual(bnmTs.parseBnmXml('<html>eroare</html>'), {})
+})

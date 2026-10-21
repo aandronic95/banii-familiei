@@ -2,6 +2,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { nextUnpaid } from "../_shared/loan.ts";
+import { ratesFor } from "../_shared/bnm.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "";
@@ -62,18 +63,7 @@ async function send(members: Member[], kind: string, text: (lang: "ro" | "ru") =
 }
 
 async function refreshRates(today: string) {
-  const [y, m, d] = today.split("-");
-  try {
-    const r = await fetch(`https://www.bnm.md/en/official_exchange_rates?get_xml=1&date=${d}.${m}.${y}`);
-    const xml = await r.text();
-    for (const cur of ["EUR", "USD"]) {
-      const block = xml.match(new RegExp(`<Valute[^>]*>(?:(?!</Valute>)[\\s\\S])*<CharCode>${cur}</CharCode>(?:(?!</Valute>)[\\s\\S])*</Valute>`));
-      if (!block) continue;
-      const nominal = Number(block[0].match(/<Nominal>([\d.,]+)<\/Nominal>/)?.[1]?.replace(",", ".") ?? 1);
-      const value = Number(block[0].match(/<Value>([\d.,]+)<\/Value>/)?.[1]?.replace(",", "."));
-      if (value > 0) await db.from("rates").upsert({ currency: cur, date: today, rate: value / nominal });
-    }
-  } catch (_) { /* cursul rămâne cel de ieri */ }
+  await ratesFor(db, today);
 }
 
 async function latestRates(): Promise<Record<string, number>> {

@@ -1,16 +1,32 @@
 <script setup>
-import { reactive, computed } from 'vue'
+import { reactive, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, save, setRate, debtMdl } from '../store.js'
+import { S, me, save, setRate, refreshRates, debtMdl } from '../store.js'
 import { t, lang, setLang } from '../lib/i18n.js'
-import { parseAmount, money0, daysUntil } from '../lib/format.js'
+import { parseAmount, money0, daysUntil, todayISO, dateLong } from '../lib/format.js'
 import { haptic } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
 
 const router = useRouter()
 const notify = reactive({ loans: true, budget: true, weekly: true, car: true, ...(me.value?.notify || {}) })
-const rates = reactive({ EUR: String(S.rates.EUR || '').replace('.', ','), USD: String(S.rates.USD || '').replace('.', ',') })
+const fmtRate = (v) => (v ? String(v).replace('.', ',') : '')
+const rates = reactive({ EUR: fmtRate(S.rates.EUR), USD: fmtRate(S.rates.USD) })
+watch(() => [S.rates.EUR, S.rates.USD], ([e, u]) => { rates.EUR = fmtRate(e); rates.USD = fmtRate(u) })
+const rateDate = ref(todayISO())
+const pastRates = ref(null)
+const rateBusy = ref(false)
+async function loadBnm() {
+  rateBusy.value = true
+  pastRates.value = null
+  try {
+    const isToday = rateDate.value === todayISO() || !rateDate.value
+    const r = await refreshRates(isToday ? undefined : rateDate.value)
+    if (!r.rates?.EUR && !r.rates?.USD) toast(t('bnmFail'))
+    else if (!isToday) pastRates.value = r
+    else toast(t('saved'))
+  } catch (e) { console.error(e); toast(t('bnmFail')) } finally { rateBusy.value = false }
+}
 const carNote = computed(() => {
   const e = S.carEvents.filter((x) => !x.done && x.due_date).sort((a, b) => a.due_date.localeCompare(b.due_date))[0]
   return e ? t('expiresIn', e.title, t('inDays', Math.max(0, daysUntil(e.due_date)))) : ''
@@ -77,7 +93,15 @@ const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetS
           <input :id="'r-' + c" v-model="rates[c]" class="inp" inputmode="decimal" @change="saveRate(c)">
         </div>
       </div>
-      <p class="hint" style="margin: 0;">{{ t('rateAuto') }}</p>
+      <p class="hint" style="margin: 0;">{{ S.rateDates.EUR ? t('rateFrom', dateLong(S.rateDates.EUR)) + ' ' : '' }}{{ t('rateAuto') }}</p>
+      <div style="display: flex; gap: 8px;">
+        <input v-model="rateDate" type="date" class="inp" :max="todayISO()" :aria-label="t('rateDate')" style="flex: 1;">
+        <button type="button" class="bf-btn bf-btn--secondary" :disabled="rateBusy" @click="loadBnm">{{ t('bnmLoad') }}</button>
+      </div>
+      <div v-if="pastRates" class="bf-card stack" style="padding: 12px 16px;">
+        <div class="cap">{{ t('rateFrom', dateLong(pastRates.date)) }}</div>
+        <div v-for="(v, c) in pastRates.rates" :key="c" class="kv"><span>1 {{ c }}</span><b>{{ fmtRate(v) }} MDL</b></div>
+      </div>
     </section>
 
     <div class="cap" style="display: flex; gap: 6px; align-items: flex-start;">
