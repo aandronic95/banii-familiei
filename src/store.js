@@ -20,13 +20,16 @@ export const S = reactive({
   cars: [],
   carEvents: [],
   investments: [],
+  recurring: [],
+  debts: [],
+  goals: [],
   rates: { MDL: 1 },
   rateDates: {},
 })
 
 const TABLES = {
   accounts: 'accounts', categories: 'categories', transactions: 'transactions', loans: 'loans',
-  loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments',
+  loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments', recurring: 'recurring', debts: 'debts', goals: 'goals',
 }
 
 // ───────────── Autentificare prin Telegram ─────────────
@@ -105,7 +108,7 @@ async function fetchAll(table, order = 'id') {
 }
 
 export async function loadAll() {
-  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, rates] = await Promise.all([
+  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, rates] = await Promise.all([
     supabase.from('families').select('*').limit(1).single(),
     fetchAll('members', 'created_at'),
     fetchAll('accounts', 'sort'),
@@ -116,11 +119,14 @@ export async function loadAll() {
     fetchAll('cars', 'created_at'),
     fetchAll('car_events', 'created_at'),
     fetchAll('investments', 'created_at'),
+    fetchAll('recurring', 'next_date'),
+    fetchAll('debts', 'created_at'),
+    fetchAll('goals', 'created_at'),
     supabase.from('rates').select('*').order('date', { ascending: false }).limit(20),
   ])
   if (fam.error) throw fam.error
   lastLoad = Date.now()
-  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments })
+  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals })
   for (const r of rates.data || []) {
     if (!S.rateDates[r.currency]) { S.rates[r.currency] = Number(r.rate); S.rateDates[r.currency] = r.date }
   }

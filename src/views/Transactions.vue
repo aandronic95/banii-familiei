@@ -49,7 +49,10 @@ const groups = computed(() => {
     <div v-if="acc" class="bf-card">
       <div class="bf-balance__label">{{ acc.bank || t(acc.type === 'card' ? 'cards' : acc.type === 'cash' ? 'cash' : 'deposits') }}</div>
       <div class="bf-balance__amount">{{ money(balances[acc.id]) }}<span class="bf-balance__cur">{{ acc.currency }}</span></div>
-      <div style="margin-top: 12px;"><button type="button" class="bf-btn bf-btn--secondary" @click="router.push({ path: '/tx/new', query: { account: acc.id } })"><Icon name="plus" />{{ t('add') }}</button></div>
+      <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <button type="button" class="bf-btn bf-btn--secondary" @click="router.push({ path: '/tx/new', query: { account: acc.id } })"><Icon name="plus" />{{ t('add') }}</button>
+        <button type="button" class="bf-btn bf-btn--secondary" @click="router.push('/import')"><Icon name="list" />{{ t('importTitle') }}</button>
+      </div>
     </div>
 
     <input v-model="q" class="inp" type="search" :placeholder="t('search')" :aria-label="t('search')">

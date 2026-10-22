@@ -86,11 +86,11 @@ jobs:
           API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
           WEBHOOK_SECRET=$(printf 'webhook:%s' "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-48)
           curl -sf "$API/setWebhook" -H 'content-type: application/json' \
-            -d "{\"url\":\"https://${PROJECT_REF}.supabase.co/functions/v1/bot\",\"secret_token\":\"${WEBHOOK_SECRET}\",\"allowed_updates\":[\"message\"]}" > /dev/null
+            -d "{\"url\":\"https://${PROJECT_REF}.supabase.co/functions/v1/bot\",\"secret_token\":\"${WEBHOOK_SECRET}\",\"allowed_updates\":[\"message\",\"callback_query\"]}" > /dev/null
           curl -sf "$API/setChatMenuButton" -H 'content-type: application/json' \
             -d "{\"menu_button\":{\"type\":\"web_app\",\"text\":\"Deschide\",\"web_app\":{\"url\":\"${APP_URL}\"}}}" > /dev/null
           curl -sf "$API/setMyCommands" -H 'content-type: application/json' \
-            -d '{"commands":[{"command":"start","description":"Deschide aplicația"},{"command":"id","description":"Arată ID-ul tău Telegram"}]}' > /dev/null
+            -d '{"commands":[{"command":"start","description":"Deschide aplicația"},{"command":"ajutor","description":"Cum adaug o cheltuială prin mesaj"},{"command":"id","description":"Arată ID-ul tău Telegram"}]}' > /dev/null
           echo "Bot configurat: https://t.me/${BOT_USERNAME}"
       - name: Verifică funcțiile publicate
         run: |

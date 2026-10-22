@@ -9,7 +9,7 @@ import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
 
 const router = useRouter()
-const notify = reactive({ loans: true, budget: true, weekly: true, car: true, invest: true, ...(me.value?.notify || {}) })
+const notify = reactive({ loans: true, budget: true, weekly: true, car: true, invest: true, recurring: true, debts: true, ...(me.value?.notify || {}) })
 const fmtRate = (v) => (v ? String(v).replace('.', ',') : '')
 const rates = reactive({ EUR: fmtRate(S.rates.EUR), USD: fmtRate(S.rates.USD) })
 watch(() => [S.rates.EUR, S.rates.USD], ([e, u]) => { rates.EUR = fmtRate(e); rates.USD = fmtRate(u) })
@@ -35,9 +35,11 @@ const links = computed(() => [
   { to: '/credits', icon: 'bank', title: t('credits'), sub: debtMdl.value ? `${money0(debtMdl.value)} MDL ${t('toPay')}` : '' },
   { to: '/investments', icon: 'chart', title: t('investments'), sub: investMdl.value ? `${money0(investMdl.value)} MDL` : '' },
   { to: '/car', icon: 'car', title: t('carTitle'), sub: carNote.value },
+  { to: '/recurring', icon: 'clock', title: t('recurringTitle'), sub: S.recurring.filter((r) => r.active).length ? S.recurring.filter((r) => r.active).map((r) => r.name).slice(0, 3).join(', ') : t('recurringSub') },
   { to: '/budgets', icon: 'pie', title: t('budgets'), sub: '' },
   { to: '/transactions', icon: 'list', title: t('transactions'), sub: '' },
   { to: '/apple-pay', icon: 'card', title: t('apTitle'), sub: t('apMenuSub') },
+  { to: '/import', icon: 'list', title: t('importTitle'), sub: t('importSub') },
   { to: '/family', icon: 'users', title: t('family'), sub: S.members.map((m) => m.name).join(', ') },
 ])
 
@@ -54,7 +56,7 @@ async function saveRate(c) {
   const v = parseAmount(rates[c])
   if (v > 0) { await setRate(c, v); toast(t('saved')) }
 }
-const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub'], ['invest', 'nInvest', 'nInvestSub']]
+const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub'], ['invest', 'nInvest', 'nInvestSub'], ['recurring', 'nRecurring', 'nRecurringSub'], ['debts', 'nDebts', 'nDebtsSub']]
 </script>
 
 <template>

@@ -69,14 +69,33 @@ const isCar = computed(() => f.kind === 'expense' && S.cars.length && S.categori
 const saveLabel = computed(() => t(f.kind === 'income' ? 'saveIncome' : f.kind === 'transfer' ? 'saveTransfer' : f.kind === 'expense' ? 'saveExpense' : 'save'))
 const accLabel = (a) => `${a.name} · ${money(balances.value[a.id])} ${a.currency}`
 
+const ocr = ref({ state: '', total: null, merchant: null })
 async function pickFile(e) {
   const file = e.target.files?.[0]
   if (!file) return
   busy.value = true
+  runOcr(file)
   try {
     receiptPreview.value = URL.createObjectURL(file)
     f.receipt_path = await uploadReceipt(file)
   } catch (e2) { console.error(e2); err.value = t('error', e2); receiptPreview.value = '' } finally { busy.value = false; e.target.value = '' }
+}
+// Citește suma și magazinul de pe bon; completează singur câmpurile goale
+async function runOcr(file) {
+  if (f.kind === 'transfer') return
+  ocr.value = { state: 'reading', total: null, merchant: null }
+  try {
+    const { readReceipt } = await import('../lib/ocr.js')
+    const r = await readReceipt(file)
+    ocr.value = { state: r.total ? 'found' : 'none', total: r.total, merchant: r.merchant }
+    if (r.total && !parseAmount(f.amount)) { f.amount = String(r.total).replace('.', ','); haptic('success') }
+    if (r.merchant && !f.merchant) f.merchant = r.merchant
+  } catch (e) { console.warn('ocr', e); ocr.value = { state: 'none', total: null, merchant: null } }
+}
+function useOcr() {
+  if (ocr.value.total) f.amount = String(ocr.value.total).replace('.', ',')
+  if (ocr.value.merchant) f.merchant = ocr.value.merchant
+  ocr.value.state = 'used'
 }
 function dropReceipt() { f.receipt_path = null; receiptPreview.value = '' }
 
@@ -203,6 +222,13 @@ async function del() {
 
     <div v-if="f.kind !== 'transfer'" class="stack">
       <img v-if="receiptPreview" :src="receiptPreview" class="receipt-img" :alt="t('receipt')">
+      <div v-if="ocr.state === 'reading'" class="bf-banner" style="background: var(--surface-2);" role="status"><div class="spinner" style="width: 18px; height: 18px; border-width: 2px;"></div><div>{{ t('ocrReading') }}</div></div>
+      <div v-else-if="ocr.state === 'found'" class="bf-banner" style="background: var(--brand-soft); align-items: center;">
+        <Icon name="check" />
+        <div style="flex: 1;">{{ t('ocrFound', money(ocr.total) + (ocr.merchant ? ' · ' + ocr.merchant : '')) }}</div>
+        <button type="button" class="link" style="padding: 0;" @click="useOcr">{{ t('ocrUse') }}</button>
+      </div>
+      <div v-else-if="ocr.state === 'none'" class="hint">{{ t('ocrNone') }}</div>
       <input ref="fileInput" id="rcpt" type="file" accept="image/*" capture="environment" class="file-hidden" @change="pickFile">
       <button type="button" class="bf-btn bf-btn--secondary bf-btn--block" style="height: 56px; border: 1.5px dashed var(--line);" @click="fileInput.click()">
         <Icon name="camera" />{{ receiptPreview ? t('receiptChange') : t('receipt') }}

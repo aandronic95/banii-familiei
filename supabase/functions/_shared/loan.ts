@@ -34,3 +34,12 @@ export function nextUnpaid(l: Loan, paidNs: number[]): Installment | null {
   const paid = new Set(paidNs);
   return schedule(l).find((x) => x.n > (l.paid_before ?? 0) && !paid.has(x.n)) ?? null;
 }
+
+// Următoarea dată a unei plăți recurente: peste `every` luni, în ziua `dom` (sau ultima zi a lunii)
+export function nextOccurrence(iso: string, every: number, dom: number): string {
+  const [y, m] = iso.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + every, 1));
+  const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+  t.setUTCDate(Math.min(dom, last));
+  return t.toISOString().slice(0, 10);
+}

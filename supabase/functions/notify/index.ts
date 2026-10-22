@@ -1,7 +1,7 @@
 // Notificări programate (rulate zilnic și săptămânal din GitHub Actions) + actualizare curs BNM.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
-import { nextUnpaid } from "../_shared/loan.ts";
+import { nextOccurrence, nextUnpaid } from "../_shared/loan.ts";
 import { ratesFor } from "../_shared/bnm.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
@@ -26,6 +26,9 @@ const T = {
     loan: (name: string, amt: string, cur: string, d: number, date: string) =>
       d === 0 ? `🏦 Azi e scadența ratei „${name}”: ${amt} ${cur}.` : `🏦 Rata „${name}” de ${amt} ${cur} e scadentă peste ${d} zile, pe ${date}.`,
     car: (title: string, d: number, date: string) => `🚗 ${title} expiră peste ${d} ${d === 1 ? "zi" : "zile"}, pe ${date}.`,
+    recAdded: (name: string, sign: string, amt: string, cur: string) => `🔁 Am adăugat plata recurentă „${name}”: ${sign}${amt} ${cur}.`,
+    recSoon: (name: string, sign: string, amt: string, cur: string) => `🔔 Mâine: „${name}” ${sign}${amt} ${cur}.`,
+    debtDue: (who: string, dir: string, amt: string, cur: string) => dir === "owed_to_us" ? `🤝 Azi e termenul: ${who} trebuie să vă întoarcă ${amt} ${cur}.` : `🤝 Azi e termenul: trebuie să-i întoarceți lui ${who} ${amt} ${cur}.`,
     inv: (name: string, amt: string, cur: string, d: number, date: string) =>
       d === 0 ? `📈 Azi ajunge la scadență „${name}” (${amt} ${cur}).` : `📈 „${name}” (${amt} ${cur}) ajunge la scadență peste ${d} zile, pe ${date}.`,
     b80: (cat: string, left: string) => `⚠️ Bugetul „${cat}” e consumat 80%. Mai ai ${left} MDL luna asta.`,
@@ -38,6 +41,9 @@ const T = {
     loan: (name: string, amt: string, cur: string, d: number, date: string) =>
       d === 0 ? `🏦 Сегодня платёж по «${name}»: ${amt} ${cur}.` : `🏦 Платёж по «${name}» ${amt} ${cur} через ${d} дн., ${date}.`,
     car: (title: string, d: number, date: string) => `🚗 ${title} истекает через ${d} дн., ${date}.`,
+    recAdded: (name: string, sign: string, amt: string, cur: string) => `🔁 Добавлен регулярный платёж «${name}»: ${sign}${amt} ${cur}.`,
+    recSoon: (name: string, sign: string, amt: string, cur: string) => `🔔 Завтра: «${name}» ${sign}${amt} ${cur}.`,
+    debtDue: (who: string, dir: string, amt: string, cur: string) => dir === "owed_to_us" ? `🤝 Сегодня срок: ${who} должен вернуть ${amt} ${cur}.` : `🤝 Сегодня срок: нужно вернуть ${who} ${amt} ${cur}.`,
     inv: (name: string, amt: string, cur: string, d: number, date: string) =>
       d === 0 ? `📈 Сегодня погашение «${name}» (${amt} ${cur}).` : `📈 «${name}» (${amt} ${cur}): погашение через ${d} дн., ${date}.`,
     b80: (cat: string, left: string) => `⚠️ Бюджет «${cat}» использован на 80%. Осталось ${left} MDL.`,
@@ -91,6 +97,39 @@ async function daily(today: string) {
       .eq("family_id", f.id).in("role", ["owner", "editor"]).not("telegram_id", "is", null);
     const members = (mem ?? []) as Member[];
     if (!members.length) continue;
+
+    // Plăți recurente: se adaugă în ziua lor (recuperează și zilele ratate), anunț cu o zi înainte
+    const { data: recs } = await db.from("recurring").select("*").eq("family_id", f.id).eq("active", true);
+    const tomorrow = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10);
+    const { data: famAccs } = await db.from("accounts").select("id, currency, type, archived").eq("family_id", f.id);
+    const firstAcc = (famAccs ?? []).find((a) => !a.archived && a.type === "card") ?? (famAccs ?? []).find((a) => !a.archived);
+    for (const r of recs ?? []) {
+      const acc = (famAccs ?? []).find((a) => a.id === r.account_id) ?? firstAcc;
+      const sign = r.kind === "income" ? "+" : "−";
+      if (r.remind && r.next_date === tomorrow && (await once(`rec-soon:${r.id}:${r.next_date}`))) {
+        await send(members, "recurring", (lg) => T[lg].recSoon(r.name, sign, fmt(Number(r.amount)), acc?.currency ?? "MDL"));
+      }
+      let next = r.next_date, guard = 0;
+      while (r.auto_add && acc && next <= today && guard++ < 6) {
+        if (await once(`rec:${r.id}:${next}`)) {
+          await db.from("transactions").insert({
+            family_id: f.id, kind: r.kind, amount: r.amount, account_id: acc.id, category_id: r.category_id,
+            member_id: r.member_id, date: next, merchant: r.name, note: "Plată recurentă", recurring_id: r.id,
+          });
+          await send(members, "recurring", (lg) => T[lg].recAdded(r.name, sign, fmt(Number(r.amount)), acc.currency));
+        }
+        next = nextOccurrence(next, r.every_months, r.day_of_month);
+      }
+      if (next !== r.next_date) await db.from("recurring").update({ next_date: next }).eq("id", r.id);
+    }
+
+    // Datorii personale: memento în ziua termenului
+    const { data: debts } = await db.from("debts").select("*").eq("family_id", f.id).eq("settled", false).eq("due_date", today);
+    for (const d of debts ?? []) {
+      if (await once(`debt:${d.id}:${today}`)) {
+        await send(members, "debts", (lg) => T[lg].debtDue(d.person, d.direction, fmt(Number(d.amount) - Number(d.paid)), d.currency));
+      }
+    }
 
     // Credite
     const { data: loans } = await db.from("loans").select("*").eq("family_id", f.id).eq("closed", false);

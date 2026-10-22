@@ -141,3 +141,87 @@ test('Apple Pay: categoria după magazin', { skip: !walletTs }, () => {
   assert.equal(g('Farmacia Familiei'), 'heart')
   assert.equal(g('Ceva necunoscut'), null)
 })
+
+const quickTs = await import('../supabase/functions/_shared/quick.ts').catch((e) => { console.error(e); return null })
+test('mesaj la bot: se înțelege suma, tipul, contul și categoria', { skip: !quickTs }, () => {
+  const p = quickTs.parseQuick
+  let q = p('cafea 45')
+  assert.equal(q.amount, 45); assert.equal(q.kind, 'expense'); assert.equal(q.categoryIcon, 'ticket'); assert.equal(q.description, 'Cafea')
+  q = p('benzină 900 cash')
+  assert.equal(q.amount, 900); assert.equal(q.cash, true); assert.equal(q.categoryIcon, 'car'); assert.equal(q.isFuel, true)
+  q = p('+salariu 14 200')
+  assert.equal(q.kind, 'income'); assert.equal(q.amount, 14200)
+  q = p('salariu 14200')
+  assert.equal(q.kind, 'income')
+  q = p('linella 385,50 maib')
+  assert.equal(q.amount, 385.5); assert.equal(q.categoryIcon, 'cart')
+  q = p('20€ revolut netflix')
+  assert.equal(q.amount, 20); assert.equal(q.currency, 'EUR')
+  q = p('farmacie 120 lei')
+  assert.equal(q.amount, 120); assert.equal(q.currency, 'MDL'); assert.equal(q.categoryIcon, 'heart')
+  assert.equal(p('salut'), null)
+  assert.equal(p('/start'), null)
+  const accs = [
+    { id: 'a', name: 'MAIB Visa', type: 'card', currency: 'MDL', bank: 'MAIB', member_id: 'm2' },
+    { id: 'b', name: 'MICB', type: 'card', currency: 'MDL', bank: 'MICB', member_id: 'm1' },
+    { id: 'r', name: 'Revolut', type: 'card', currency: 'EUR', bank: 'Revolut', member_id: 'm1' },
+    { id: 'c', name: 'Portofel', type: 'cash', currency: 'MDL' },
+  ]
+  assert.equal(quickTs.pickAccount(p('benzină 900 cash'), accs, 'm1').id, 'c')
+  assert.equal(quickTs.pickAccount(p('linella 385,50 maib'), accs, 'm1').id, 'a')
+  assert.equal(quickTs.pickAccount(p('20€ revolut netflix'), accs, 'm1').id, 'r')
+  assert.equal(quickTs.pickAccount(p('cafea 45'), accs, 'm1').id, 'b')
+})
+
+test('plăți recurente: următoarea dată', async () => {
+  const { nextOccurrence } = await import('../supabase/functions/_shared/loan.ts')
+  assert.equal(nextOccurrence('2026-10-05', 1, 5), '2026-11-05')
+  assert.equal(nextOccurrence('2026-01-31', 1, 31), '2026-02-28')
+  assert.equal(nextOccurrence('2026-02-28', 1, 31), '2026-03-31')
+  assert.equal(nextOccurrence('2026-11-10', 3, 10), '2027-02-10')
+})
+
+test('import CSV: format Revolut', async () => {
+  const c = await import('../src/lib/csv.js')
+  const text = 'Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,State,Balance\n' +
+    'CARD_PAYMENT,Current,2026-10-12 16:05:33,2026-10-13 09:00:01,Linella,-12.30,0.00,EUR,COMPLETED,140.00\n' +
+    'TOPUP,Current,2026-10-10 10:00:00,2026-10-10 10:00:05,"Top-Up by *1093",100.00,0.00,EUR,COMPLETED,152.30\n' +
+    'CARD_PAYMENT,Current,2026-10-11 12:00:00,,Netflix,-9.99,0.00,EUR,REVERTED,152.30\n' +
+    'TRANSFER,Current,2026-10-09 08:00:00,2026-10-09 08:00:00,"To Ana, Popescu",-50.00,0.50,EUR,COMPLETED,52.30\n'
+  const { rows } = c.parseCSV(text)
+  const cols = c.detectColumns(rows)
+  assert.ok(cols)
+  const tx = c.toTransactions(rows, cols)
+  assert.equal(tx.length, 3)
+  assert.deepEqual(tx[0], { date: '2026-10-13', kind: 'expense', amount: 12.3, description: 'Linella', currency: 'EUR' })
+  assert.equal(tx[1].kind, 'income'); assert.equal(tx[1].amount, 100)
+  assert.equal(tx[2].amount, 50.5); assert.equal(tx[2].description, 'To Ana, Popescu')
+})
+
+test('import CSV: bancă cu ; și coloane debit/credit, date românești', async () => {
+  const c = await import('../src/lib/csv.js')
+  const text = 'Extras de cont\nCont: MD00XX\n\nData tranzacției;Descriere;Debit;Credit;Sold\n' +
+    '21.10.2026;Plata cu cardul LINELLA SRL;385,50;;12 014,50\n' +
+    '05.10.2026;Salariu octombrie;;14 200,00;12 400,00\n' +
+    '04.10.2026;Comision deservire;5,00;;-\n'
+  const { rows, sep } = c.parseCSV(text)
+  assert.equal(sep, ';')
+  const cols = c.detectColumns(rows)
+  const tx = c.toTransactions(rows, cols)
+  assert.equal(tx.length, 3)
+  assert.deepEqual(tx[0], { date: '2026-10-21', kind: 'expense', amount: 385.5, description: 'Plata cu cardul LINELLA SRL', currency: null })
+  assert.equal(tx[1].kind, 'income'); assert.equal(tx[1].amount, 14200)
+  assert.equal(c.parseSigned('(45.00)'), -45)
+  assert.equal(c.parseDate('12/10/26'), '2026-10-12')
+})
+
+test('bon: totalul și magazinul din textul OCR', async () => {
+  const { extractReceipt } = await import('../src/lib/receipt.js')
+  const bon1 = `"LINELLA" S.R.L.\nCod fiscal 1003600000000\nmun. Chisinau, str. Ismail 1\nPaine alba 1 x 9,50 9,50\nLapte 2.5% 2 x 18,90 37,80\nCafea 1 x 338,20 338,20\nTOTAL 385,50\nTVA 20% 64,25\nNumerar primit 400,00\nRest 14,50`
+  assert.deepEqual(extractReceipt(bon1), { total: 385.5, merchant: 'LINELLA' })
+  const bon2 = `ПЕТРОМ МОЛДОВА\nБензин 95 38,20 л x 24,87\nИТОГО\n950,00\nНДС 158,33`
+  assert.equal(extractReceipt(bon2).total, 950)
+  const bon3 = `Farmacia Familiei\nParacetamol 25,00\nVitamina C 1 234,50\nCard ****1093`
+  assert.equal(extractReceipt(bon3).total, 1234.5)
+  assert.deepEqual(extractReceipt(''), { total: null, merchant: null })
+})
