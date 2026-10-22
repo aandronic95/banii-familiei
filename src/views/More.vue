@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, save, setRate, refreshRates, debtMdl, investMdl } from '../store.js'
+import { S, me, save, setRate, refreshRates, debtMdl, investMdl, debtsSummary } from '../store.js'
 import { t, lang, setLang } from '../lib/i18n.js'
 import { parseAmount, money0, daysUntil, todayISO, dateLong } from '../lib/format.js'
 import { haptic } from '../lib/telegram.js'
@@ -32,6 +32,9 @@ const carNote = computed(() => {
   return e ? t('expiresIn', e.title, t('inDays', Math.max(0, daysUntil(e.due_date)))) : ''
 })
 const links = computed(() => [
+  { to: '/calendar', icon: 'clock', title: t('calendarTitle'), sub: t('calendarSub') },
+  { to: '/goals', icon: 'piggy', title: t('goalsTitle'), sub: S.goals.length ? S.goals.map((g) => g.name).slice(0, 3).join(', ') : t('goalsSub') },
+  { to: '/debts', icon: 'users', title: t('debtsTitle'), sub: debtsSummary.value.owed || debtsSummary.value.owe ? `+${money0(debtsSummary.value.owed)} / −${money0(debtsSummary.value.owe)} MDL` : t('debtsSub') },
   { to: '/credits', icon: 'bank', title: t('credits'), sub: debtMdl.value ? `${money0(debtMdl.value)} MDL ${t('toPay')}` : '' },
   { to: '/investments', icon: 'chart', title: t('investments'), sub: investMdl.value ? `${money0(investMdl.value)} MDL` : '' },
   { to: '/car', icon: 'car', title: t('carTitle'), sub: carNote.value },

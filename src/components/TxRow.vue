@@ -29,7 +29,8 @@ const info = computed(() => {
     title = x.merchant || t(x.kind === 'invest' ? 'invested' : 'returned')
     icon = 'chart'
     sub.length = 0
-    sub.push(t(x.kind === 'invest' ? 'invested' : 'returned'))
+    if (x.debt_id) { icon = 'users'; sub.push(t('calDebt')) }
+    else sub.push(t(x.kind === 'invest' ? 'invested' : 'returned'))
     if (acc) sub.push(acc.name)
   }
   if (x.car_kind === 'fuel') { icon = 'fuel'; if (x.fuel_liters) sub.push(`${String(x.fuel_liters).replace('.', ',')} L`) }

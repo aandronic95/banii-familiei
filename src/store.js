@@ -1,7 +1,7 @@
 import { reactive, computed } from 'vue'
 import { supabase } from './lib/supabase.js'
 import { tg, inTelegram } from './lib/telegram.js'
-import { loanStatus } from './lib/loan.js'
+import { loanStatus, nextOccurrence } from './lib/loan.js'
 import { todayISO } from './lib/format.js'
 import { accruedInterest } from './lib/invest.js'
 
@@ -329,3 +329,66 @@ export const budgetRows = computed(() => {
       return { cat: c, spent, budget, pct: spent / budget, state: spent > budget ? 'over' : spent >= 0.8 * budget ? 'warn' : 'ok' }
     })
 })
+
+// ───────────── Calendar: tot ce urmează între două date ─────────────
+export function upcoming(from, to) {
+  const ev = []
+  for (const l of S.loans) {
+    if (l.closed) continue
+    const st = loanStatuses.value[l.id]
+    for (const x of st.schedule) {
+      if (x.due < from) continue
+      if (x.due > to) break
+      if (st.paid.has(x.n)) continue
+      ev.push({ date: x.due, type: 'loan', title: l.name, amount: x.payment, currency: l.currency, sign: -1, to: '/credits' })
+    }
+  }
+  for (const r of S.recurring) {
+    if (!r.active) continue
+    let d = r.next_date, guard = 0
+    while (d <= to && guard++ < 40) {
+      if (d >= from) ev.push({ date: d, type: 'rec', title: r.name, amount: Number(r.amount), currency: accountById(r.account_id)?.currency || 'MDL', sign: r.kind === 'income' ? 1 : -1, to: '/recurring/' + r.id, recurring: r })
+      d = nextOccurrence(d, r.every_months, r.day_of_month)
+    }
+  }
+  for (const e of S.carEvents) {
+    if (e.done || !e.due_date || e.due_date < from || e.due_date > to) continue
+    ev.push({ date: e.due_date, type: 'car', title: e.title, amount: e.amount ? Number(e.amount) : null, currency: 'MDL', sign: -1, to: '/car' })
+  }
+  for (const i of S.investments) {
+    if (i.status === 'closed' || !i.maturity_date || i.maturity_date < from || i.maturity_date > to) continue
+    ev.push({ date: i.maturity_date, type: 'inv', title: i.name + (i.code ? ' ' + i.code : ''), amount: Number(i.amount), currency: i.currency, sign: 1, to: '/investment/' + i.id })
+  }
+  for (const d of S.debts) {
+    if (d.settled || !d.due_date || d.due_date < from || d.due_date > to) continue
+    ev.push({ date: d.due_date, type: 'debt', title: d.person, amount: Number(d.amount) - Number(d.paid), currency: d.currency, sign: d.direction === 'we_owe' ? -1 : 1, to: '/debt/' + d.id })
+  }
+  return ev.sort((a, b) => a.date.localeCompare(b.date) || a.sign - b.sign)
+}
+
+// Banii „la îndemână”: carduri și cash (fără depozite și conturi de investiții)
+export const liquidMdl = computed(() =>
+  activeAccounts.value.filter((a) => a.type === 'card' || a.type === 'cash').reduce((s, a) => s + toMdl(balances.value[a.id] ?? 0, a.currency), 0))
+
+// Următorul salariu: plată recurentă de venit (categoria „Salariu” sau numele conține „salar”)
+export const nextSalary = computed(() => {
+  const cands = S.recurring.filter((r) => r.active && r.kind === 'income' && (/salar|зарплат/i.test(r.name) || categoryById(r.category_id)?.icon === 'wallet'))
+  return cands.sort((a, b) => a.next_date.localeCompare(b.next_date))[0] || null
+})
+
+// ───────────── Datorii și obiective ─────────────
+export const debtsSummary = computed(() => {
+  let owed = 0, owe = 0
+  for (const d of S.debts) {
+    if (d.settled) continue
+    const left = toMdl(Number(d.amount) - Number(d.paid), d.currency)
+    if (d.direction === 'owed_to_us') owed += left; else owe += left
+  }
+  return { owed, owe }
+})
+
+export function goalProgress(g) {
+  const saved = g.account_id ? (balances.value[g.account_id] ?? 0) : Number(g.saved) || 0
+  const target = Number(g.target) || 1
+  return { saved, target, pct: Math.max(0, Math.min(1, saved / target)), left: Math.max(0, target - saved) }
+}

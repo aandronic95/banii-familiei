@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, isOwner, totalMdl, debtMdl, investMdl, periodSums, monthRange, budgetRows, loanStatuses } from '../store.js'
+import { S, me, isOwner, totalMdl, debtMdl, investMdl, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
@@ -113,6 +113,12 @@ const alerts = computed(() => {
         </button>
       </div>
     </section>
+
+    <button v-if="nextSalary" type="button" class="bf-banner" style="border: 0; text-align: left; cursor: pointer; background: var(--surface); box-shadow: var(--shadow-card);" @click="router.push('/calendar')">
+      <Icon name="clock" />
+      <div style="flex: 1;"><b>{{ t('untilSalary', t('inDays', Math.max(0, daysUntil(nextSalary.next_date)))) }}</b> · {{ t('calendarTitle').toLowerCase() }}</div>
+      <span class="chev" aria-hidden="true">›</span>
+    </button>
 
     <div v-if="alerts.length" class="stack">
       <button v-for="a in alerts" :key="a.key" type="button" class="bf-banner" :class="{ 'bf-banner--danger': a.danger }" style="border: 0; text-align: left; cursor: pointer;" @click="router.push(a.to)">
