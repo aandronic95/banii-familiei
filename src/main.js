@@ -22,6 +22,7 @@ const routes = [
   { path: '/car-event/:id', name: 'carEvent', component: () => import('./views/CarEventForm.vue'), meta: { form: true } },
   { path: '/budgets', name: 'budgets', component: () => import('./views/Budgets.vue') },
   { path: '/category/:id', name: 'category', component: () => import('./views/CategoryForm.vue'), meta: { form: true } },
+  { path: '/apple-pay', name: 'applePay', component: () => import('./views/ApplePay.vue') },
   { path: '/family', name: 'family', component: () => import('./views/Family.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

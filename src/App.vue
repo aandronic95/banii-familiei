@@ -26,6 +26,15 @@ onMounted(() => {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshIfStale() })
 })
 
+// Link direct la o tranzacție (butonul „Modifică” din mesajul botului)
+const deepTx = new URLSearchParams(location.search).get('tx')
+watch(() => S.status, (st) => {
+  if (st === 'ready' && deepTx && /^[0-9a-f-]{36}$/i.test(deepTx)) {
+    history.replaceState(null, '', location.pathname)
+    router.push('/tx/' + deepTx)
+  }
+})
+
 watch(() => [route.fullPath, S.status], () => {
   const root = route.meta.tab
   setBack(!root && S.status === 'ready', () => router.back())

@@ -13,6 +13,8 @@ const route = useRoute()
 const router = useRouter()
 const isNew = route.params.id === 'new'
 const orig = isNew ? null : S.transactions.find((x) => x.id === route.params.id)
+// Tranzacția nu mai există (ștearsă între timp): înapoi la Acasă
+if (!isNew && !orig) router.replace('/')
 
 const lastAcc = [...S.transactions].filter((x) => x.created_by === S.userId).sort((a, b) => b.created_at.localeCompare(a.created_at))[0]?.account_id
 const defaultAcc = route.query.account || lastAcc || activeAccounts.value[0]?.id || ''

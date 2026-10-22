@@ -37,6 +37,7 @@ const links = computed(() => [
   { to: '/car', icon: 'car', title: t('carTitle'), sub: carNote.value },
   { to: '/budgets', icon: 'pie', title: t('budgets'), sub: '' },
   { to: '/transactions', icon: 'list', title: t('transactions'), sub: '' },
+  { to: '/apple-pay', icon: 'card', title: t('apTitle'), sub: t('apMenuSub') },
   { to: '/family', icon: 'users', title: t('family'), sub: S.members.map((m) => m.name).join(', ') },
 ])
 

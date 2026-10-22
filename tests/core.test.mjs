@@ -104,3 +104,40 @@ test('dobânda acumulată la obligațiuni (exemplul eVMS: 2000 MDL, 7,45%, 16 zi
   assert.equal(accruedInterest(2000, 7.45, '2026-10-06', '2027-10-06'), 149)
   assert.equal(accruedInterest(2000, null, '2026-10-06', '2026-10-22'), 0)
 })
+
+const walletTs = await import('../supabase/functions/_shared/wallet.ts').catch((e) => { console.error(e); return null })
+test('Apple Pay: suma se citește în orice format de telefon', { skip: !walletTs }, () => {
+  const p = walletTs.parseWalletAmount
+  assert.deepEqual(p('385,50 MDL'), { amount: 385.5, currency: 'MDL' })
+  assert.deepEqual(p('MDL 1 234,56'), { amount: 1234.56, currency: 'MDL' })
+  assert.deepEqual(p('1.234,56 lei'), { amount: 1234.56, currency: 'MDL' })
+  assert.deepEqual(p('€12,30'), { amount: 12.3, currency: 'EUR' })
+  assert.deepEqual(p('$1,234.56'), { amount: 1234.56, currency: 'USD' })
+  assert.deepEqual(p('12.30'), { amount: 12.3, currency: 'MDL' })
+  assert.deepEqual(p('-45,00 MDL'), { amount: 45, currency: 'MDL' })
+  assert.equal(p(''), null)
+  assert.equal(p('abc'), null)
+  assert.equal(p('0,00 MDL'), null)
+})
+test('Apple Pay: plata ajunge la contul potrivit', { skip: !walletTs }, () => {
+  const accs = [
+    { id: 'a', name: 'MAIB Visa', type: 'card', currency: 'MDL', bank: 'MAIB', last4: '4821', member_id: 'm2' },
+    { id: 'b', name: 'MICB Mastercard', type: 'card', currency: 'MDL', bank: 'MICB', last4: '1093', member_id: 'm1' },
+    { id: 'r', name: 'Revolut', type: 'card', currency: 'EUR', bank: 'Revolut', member_id: 'm1', wallet_alias: 'Revolut Metal' },
+    { id: 'c', name: 'Portofel', type: 'cash', currency: 'MDL' },
+  ]
+  const m = walletTs.matchAccount
+  assert.equal(m('Visa •••• 4821', 'MDL', accs).account.id, 'a')
+  assert.equal(m('Revolut Metal', 'EUR', accs).account.id, 'r')
+  assert.equal(m('MICB Mastercard', 'MDL', accs).account.id, 'b')
+  const unknown = m('Card necunoscut', 'MDL', accs, 'm1')
+  assert.equal(unknown.account.id, 'b')
+  assert.equal(unknown.sure, false)
+})
+test('Apple Pay: categoria după magazin', { skip: !walletTs }, () => {
+  const g = walletTs.guessCategoryIcon
+  assert.equal(g('LINELLA SRL'), 'cart')
+  assert.equal(g('Lukoil Moldova'), 'car')
+  assert.equal(g('Farmacia Familiei'), 'heart')
+  assert.equal(g('Ceva necunoscut'), null)
+})

@@ -92,3 +92,16 @@ jobs:
           curl -sf "$API/setMyCommands" -H 'content-type: application/json' \
             -d '{"commands":[{"command":"start","description":"Deschide aplicația"},{"command":"id","description":"Arată ID-ul tău Telegram"}]}' > /dev/null
           echo "Bot configurat: https://t.me/${BOT_USERNAME}"
+      - name: Verifică funcțiile publicate
+        run: |
+          BASE="https://${PROJECT_REF}.supabase.co/functions/v1"
+          W=$(curl -s -o /tmp/w -w '%{http_code}' -X POST "$BASE/wallet" -H 'content-type: application/json' \
+            -d '{"token":"cheie-falsa-pentru-test-000000000000","amount":"10,00 MDL","merchant":"Test","card":"x"}')
+          echo "wallet cu cheie falsă: $W $(cat /tmp/w)"
+          [ "$W" = "401" ] || { echo "::error::wallet trebuia să respingă cheia falsă (401), a răspuns $W"; exit 1; }
+          R=$(curl -s -o /tmp/r -w '%{http_code}' -X POST "$BASE/rates" -H 'content-type: application/json' -d '{}')
+          echo "rates fără login: $R"
+          [ "$R" = "401" ] || { echo "::error::rates trebuia să ceară login (401), a răspuns $R"; exit 1; }
+          A=$(curl -s -o /tmp/a -w '%{http_code}' -X POST "$BASE/tg-auth" -H 'content-type: application/json' -d '{"initData":"user=%7B%22id%22%3A1%7D&hash=00"}')
+          echo "tg-auth cu semnătură falsă: $A"
+          [ "$A" = "401" ] || { echo "::error::tg-auth trebuia să respingă semnătura falsă (401), a răspuns $A"; exit 1; }

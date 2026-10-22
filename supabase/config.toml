@@ -13,3 +13,6 @@ verify_jwt = false
 
 [functions.rates]
 verify_jwt = false
+
+[functions.wallet]
+verify_jwt = false

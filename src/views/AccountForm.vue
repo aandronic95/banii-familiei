@@ -22,6 +22,7 @@ const f = reactive({
   interest_rate: orig?.interest_rate ?? '',
   maturity_date: orig?.maturity_date ?? '',
   archived: orig?.archived ?? false,
+  wallet_alias: orig?.wallet_alias ?? '',
 })
 const busy = ref(false)
 const err = ref('')
@@ -41,6 +42,7 @@ async function submit() {
       interest_rate: f.type === 'deposit' && f.interest_rate !== '' ? parseAmount(f.interest_rate) : null,
       maturity_date: f.type === 'deposit' && f.maturity_date ? f.maturity_date : null,
       archived: f.archived,
+      wallet_alias: f.type === 'card' ? f.wallet_alias.trim() || null : null,
     })
     haptic('success'); toast(t('saved')); router.back()
   } catch (e) { console.error(e); err.value = t('error', e) } finally { busy.value = false }
@@ -85,6 +87,11 @@ async function del() {
       <div class="fld"><label for="a-bank">{{ t('bank') }}</label><input id="a-bank" v-model="f.bank" class="inp" maxlength="30"></div>
       <div v-if="f.type === 'card'" class="fld"><label for="a-l4">{{ t('last4') }}</label><input id="a-l4" v-model="f.last4" class="inp" inputmode="numeric" maxlength="4"></div>
       <div v-else class="fld"><label for="a-int">{{ t('interest') }}</label><input id="a-int" v-model="f.interest_rate" class="inp" inputmode="decimal"></div>
+    </div>
+    <div v-if="f.type === 'card'" class="fld">
+      <label for="a-wa">{{ t('walletAlias') }}</label>
+      <input id="a-wa" v-model="f.wallet_alias" class="inp" maxlength="60" :placeholder="t('optional')">
+      <span class="hint">{{ t('walletAliasHint') }}</span>
     </div>
     <div v-if="f.type === 'deposit'" class="fld"><label for="a-mat">{{ t('maturity') }}</label><input id="a-mat" v-model="f.maturity_date" type="date" class="inp"></div>
 
