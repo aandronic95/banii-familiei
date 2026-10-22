@@ -25,9 +25,16 @@ const info = computed(() => {
     if (mem) sub.push(mem.name)
     if (acc) sub.push(acc.name)
   }
+  if (x.kind === 'invest' || x.kind === 'divest') {
+    title = x.merchant || t(x.kind === 'invest' ? 'invested' : 'returned')
+    icon = 'chart'
+    sub.length = 0
+    sub.push(t(x.kind === 'invest' ? 'invested' : 'returned'))
+    if (acc) sub.push(acc.name)
+  }
   if (x.car_kind === 'fuel') { icon = 'fuel'; if (x.fuel_liters) sub.push(`${String(x.fuel_liters).replace('.', ',')} L`) }
   if (x.receipt_path) sub.push(t('bon'))
-  const sign = x.kind === 'income' ? '+' : x.kind === 'expense' ? '−' : ''
+  const sign = x.kind === 'income' || x.kind === 'divest' ? '+' : x.kind === 'expense' || x.kind === 'invest' ? '−' : ''
   return {
     title, icon, sub: sub.join(' · '), dot: mem ? `bf-dot bf-p${mem.color}` : null,
     amount: sign + money(x.amount) + (acc && acc.currency !== 'MDL' ? ' ' + acc.currency : ''),

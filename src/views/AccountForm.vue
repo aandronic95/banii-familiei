@@ -57,9 +57,10 @@ async function del() {
   <main class="page page--form">
     <h1 class="h-title">{{ isNew ? t('newAccount') : t('editAccount') }}</h1>
 
-    <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));" role="group" :aria-label="t('type')">
-      <button v-for="k in ['card', 'cash', 'deposit']" :key="k" type="button" :class="{ on: f.type === k }" @click="f.type = k">{{ t(k === 'card' ? 'cards' : k === 'cash' ? 'cash' : 'deposits').split(' ')[0] }}</button>
+    <div class="seg" style="grid-template-columns: repeat(4, minmax(0, 1fr));" role="group" :aria-label="t('type')">
+      <button v-for="k in ['card', 'cash', 'deposit', 'invest']" :key="k" type="button" :class="{ on: f.type === k }" @click="f.type = k">{{ t(k === 'card' ? 'cards' : k === 'cash' ? 'cash' : k === 'deposit' ? 'deposits' : 'invAccount').split(' ')[0] }}</button>
     </div>
+    <p v-if="f.type === 'invest'" class="hint" style="margin: 0;">{{ t('invAccHint') }}</p>
 
     <div class="fld"><label for="a-name">{{ t('name') }}</label><input id="a-name" v-model="f.name" class="inp" maxlength="40"></div>
 

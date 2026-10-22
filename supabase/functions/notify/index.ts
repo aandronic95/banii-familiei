@@ -26,6 +26,8 @@ const T = {
     loan: (name: string, amt: string, cur: string, d: number, date: string) =>
       d === 0 ? `🏦 Azi e scadența ratei „${name}”: ${amt} ${cur}.` : `🏦 Rata „${name}” de ${amt} ${cur} e scadentă peste ${d} zile, pe ${date}.`,
     car: (title: string, d: number, date: string) => `🚗 ${title} expiră peste ${d} ${d === 1 ? "zi" : "zile"}, pe ${date}.`,
+    inv: (name: string, amt: string, cur: string, d: number, date: string) =>
+      d === 0 ? `📈 Azi ajunge la scadență „${name}” (${amt} ${cur}).` : `📈 „${name}” (${amt} ${cur}) ajunge la scadență peste ${d} zile, pe ${date}.`,
     b80: (cat: string, left: string) => `⚠️ Bugetul „${cat}” e consumat 80%. Mai ai ${left} MDL luna asta.`,
     b100: (cat: string, over: string) => `⛔ Bugetul „${cat}” e depășit cu ${over} MDL.`,
     weekly: (inc: string, exp: string, top: string, bal: string) =>
@@ -36,6 +38,8 @@ const T = {
     loan: (name: string, amt: string, cur: string, d: number, date: string) =>
       d === 0 ? `🏦 Сегодня платёж по «${name}»: ${amt} ${cur}.` : `🏦 Платёж по «${name}» ${amt} ${cur} через ${d} дн., ${date}.`,
     car: (title: string, d: number, date: string) => `🚗 ${title} истекает через ${d} дн., ${date}.`,
+    inv: (name: string, amt: string, cur: string, d: number, date: string) =>
+      d === 0 ? `📈 Сегодня погашение «${name}» (${amt} ${cur}).` : `📈 «${name}» (${amt} ${cur}): погашение через ${d} дн., ${date}.`,
     b80: (cat: string, left: string) => `⚠️ Бюджет «${cat}» использован на 80%. Осталось ${left} MDL.`,
     b100: (cat: string, over: string) => `⛔ Бюджет «${cat}» превышен на ${over} MDL.`,
     weekly: (inc: string, exp: string, top: string, bal: string) =>
@@ -106,6 +110,17 @@ async function daily(today: string) {
       const d = daysBetween(today, e.due_date);
       if ([30, 7, 1].includes(d) && (await once(`car:${e.id}:${d}`))) {
         await send(members, "car", (lg) => T[lg].car(e.title, d, e.due_date.split("-").reverse().join(".")));
+      }
+    }
+
+    // Investiții: scadențe
+    const { data: invs } = await db.from("investments").select("id, name, code, amount, currency, maturity_date")
+      .eq("family_id", f.id).neq("status", "closed").not("maturity_date", "is", null);
+    for (const i of invs ?? []) {
+      const d = daysBetween(today, i.maturity_date);
+      if ((d === 7 || d === 0) && (await once(`inv:${i.id}:${d}`))) {
+        const label = i.code ? `${i.name} ${i.code}` : i.name;
+        await send(members, "invest", (lg) => T[lg].inv(label, fmt(Number(i.amount)), i.currency, d, i.maturity_date.split("-").reverse().join(".")));
       }
     }
 

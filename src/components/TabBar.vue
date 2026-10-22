@@ -8,7 +8,7 @@ const route = useRoute()
 const router = useRouter()
 const tabs = [
   { to: '/', name: 'home', icon: 'home', match: ['home'] },
-  { to: '/accounts', name: 'accounts', icon: 'card', match: ['accounts', 'account', 'transactions'] },
+  { to: '/accounts', name: 'accounts', icon: 'card', match: ['accounts', 'account', 'transactions', 'investments', 'investment'] },
   null,
   { to: '/reports', name: 'reports', icon: 'chart', match: ['reports'] },
   { to: '/more', name: 'more', icon: 'dots', match: ['more', 'credits', 'loan', 'car', 'budgets', 'family'] },

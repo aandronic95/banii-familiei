@@ -35,9 +35,12 @@ const f = reactive({
   fuel_liters: orig?.fuel_liters ? String(orig.fuel_liters).replace('.', ',') : '',
   odometer: orig?.odometer ?? '',
   full_tank: orig?.full_tank ?? true,
+  investment_id: orig?.investment_id ?? route.query.investment ?? null,
 })
 const busy = ref(false)
 const err = ref('')
+const isInvestMove = f.kind === 'invest' || f.kind === 'divest'
+const inv = computed(() => S.investments.find((i) => i.id === f.investment_id))
 const receiptPreview = ref('')
 const fileInput = ref(null)
 
@@ -61,7 +64,7 @@ const acc = computed(() => accountById(f.account_id))
 const toAcc = computed(() => accountById(f.to_account_id))
 const diffCur = computed(() => f.kind === 'transfer' && acc.value && toAcc.value && acc.value.currency !== toAcc.value.currency)
 const isCar = computed(() => f.kind === 'expense' && S.cars.length && S.categories.find((c) => c.id === f.category_id)?.icon === 'car')
-const saveLabel = computed(() => t(f.kind === 'income' ? 'saveIncome' : f.kind === 'transfer' ? 'saveTransfer' : 'saveExpense'))
+const saveLabel = computed(() => t(f.kind === 'income' ? 'saveIncome' : f.kind === 'transfer' ? 'saveTransfer' : f.kind === 'expense' ? 'saveExpense' : 'save'))
 const accLabel = (a) => `${a.name} · ${money(balances.value[a.id])} ${a.currency}`
 
 async function pickFile(e) {
@@ -85,7 +88,7 @@ async function submit() {
     const row = {
       ...(orig ? { id: orig.id } : {}),
       kind: f.kind, amount, account_id: f.account_id, date: f.date || todayISO(),
-      category_id: f.kind === 'transfer' ? null : f.category_id || null,
+      category_id: f.kind === 'transfer' || isInvestMove ? null : f.category_id || null,
       member_id: f.member_id || null,
       to_account_id: f.kind === 'transfer' ? f.to_account_id : null,
       to_amount: diffCur.value ? parseAmount(f.to_amount) || null : null,
@@ -95,6 +98,7 @@ async function submit() {
       fuel_liters: isCar.value && f.car_kind === 'fuel' ? parseAmount(f.fuel_liters) || null : null,
       odometer: isCar.value && f.odometer !== '' ? parseInt(String(f.odometer).replace(/\D/g, '')) || null : null,
       full_tank: isCar.value && f.car_kind === 'fuel' ? !!f.full_tank : null,
+      investment_id: f.kind === 'transfer' ? null : f.investment_id || null,
     }
     if (orig?.receipt_path && orig.receipt_path !== row.receipt_path) supabase.storage.from('receipts').remove([orig.receipt_path])
     await save('transactions', row)
@@ -116,7 +120,8 @@ async function del() {
   <main class="page page--form">
     <h1 class="h-sec" style="text-align: center;">{{ isNew ? t('newTx') : t('editTx') }}</h1>
 
-    <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));" role="group">
+    <div v-if="isInvestMove" class="bf-chip bf-chip--on" style="align-self: center;">{{ t(f.kind === 'invest' ? 'invested' : 'returned') }}</div>
+    <div v-else class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));" role="group">
       <button v-for="k in ['expense', 'income', 'transfer']" :key="k" type="button" :class="{ on: f.kind === k }" @click="f.kind = k">{{ t(k) }}</button>
     </div>
 
@@ -133,7 +138,12 @@ async function del() {
       <div v-if="calcResult !== null" class="cap" style="margin-top: 6px;" aria-live="polite">= {{ money(calcResult) }} {{ acc?.currency || 'MDL' }}</div>
     </div>
 
-    <div v-if="f.kind !== 'transfer'" class="fld">
+    <div v-if="inv" class="bf-banner" style="background: var(--brand-soft);">
+      <Icon name="chart" />
+      <div><b>{{ t('investmentLink') }}:</b> {{ [inv.platform, inv.name, inv.code].filter(Boolean).join(' · ') }}</div>
+    </div>
+
+    <div v-if="f.kind !== 'transfer' && !isInvestMove" class="fld">
       <span class="lbl">{{ t('category') }}</span>
       <div class="bf-chips">
         <button v-for="c in cats" :key="c.id" type="button" class="bf-chip" :class="{ 'bf-chip--on': f.category_id === c.id }" @click="f.category_id = f.category_id === c.id ? '' : c.id"><Icon :name="c.icon" :size="16" />{{ catName(c) }}</button>
@@ -148,7 +158,7 @@ async function del() {
     </div>
 
     <div class="fld">
-      <label for="acc">{{ f.kind === 'income' ? t('toAccount') : t('fromAccount') }}</label>
+      <label for="acc">{{ f.kind === 'income' || f.kind === 'divest' ? t('toAccount') : t('fromAccount') }}</label>
       <select id="acc" v-model="f.account_id" class="inp">
         <option v-for="a in activeAccounts" :key="a.id" :value="a.id">{{ accLabel(a) }}</option>
       </select>

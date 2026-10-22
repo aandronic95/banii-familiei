@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, save, setRate, refreshRates, debtMdl } from '../store.js'
+import { S, me, save, setRate, refreshRates, debtMdl, investMdl } from '../store.js'
 import { t, lang, setLang } from '../lib/i18n.js'
 import { parseAmount, money0, daysUntil, todayISO, dateLong } from '../lib/format.js'
 import { haptic } from '../lib/telegram.js'
@@ -9,7 +9,7 @@ import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
 
 const router = useRouter()
-const notify = reactive({ loans: true, budget: true, weekly: true, car: true, ...(me.value?.notify || {}) })
+const notify = reactive({ loans: true, budget: true, weekly: true, car: true, invest: true, ...(me.value?.notify || {}) })
 const fmtRate = (v) => (v ? String(v).replace('.', ',') : '')
 const rates = reactive({ EUR: fmtRate(S.rates.EUR), USD: fmtRate(S.rates.USD) })
 watch(() => [S.rates.EUR, S.rates.USD], ([e, u]) => { rates.EUR = fmtRate(e); rates.USD = fmtRate(u) })
@@ -33,6 +33,7 @@ const carNote = computed(() => {
 })
 const links = computed(() => [
   { to: '/credits', icon: 'bank', title: t('credits'), sub: debtMdl.value ? `${money0(debtMdl.value)} MDL ${t('toPay')}` : '' },
+  { to: '/investments', icon: 'chart', title: t('investments'), sub: investMdl.value ? `${money0(investMdl.value)} MDL` : '' },
   { to: '/car', icon: 'car', title: t('carTitle'), sub: carNote.value },
   { to: '/budgets', icon: 'pie', title: t('budgets'), sub: '' },
   { to: '/transactions', icon: 'list', title: t('transactions'), sub: '' },
@@ -52,7 +53,7 @@ async function saveRate(c) {
   const v = parseAmount(rates[c])
   if (v > 0) { await setRate(c, v); toast(t('saved')) }
 }
-const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub']]
+const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub'], ['invest', 'nInvest', 'nInvestSub']]
 </script>
 
 <template>

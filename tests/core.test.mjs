@@ -97,3 +97,10 @@ test('calculatorul din câmpul sumă', async () => {
   assert.equal(isExpression('150+35'), true)
   assert.equal(isExpression('150,35'), false)
 })
+
+test('dobânda acumulată la obligațiuni (exemplul eVMS: 2000 MDL, 7,45%, 16 zile = 6,53)', async () => {
+  const { accruedInterest } = await import('../src/lib/invest.js')
+  assert.equal(accruedInterest(2000, 7.45, '2026-10-06', '2026-10-22'), 6.53)
+  assert.equal(accruedInterest(2000, 7.45, '2026-10-06', '2027-10-06'), 149)
+  assert.equal(accruedInterest(2000, null, '2026-10-06', '2026-10-22'), 0)
+})

@@ -3,6 +3,7 @@ import { supabase } from './lib/supabase.js'
 import { tg, inTelegram } from './lib/telegram.js'
 import { loanStatus } from './lib/loan.js'
 import { todayISO } from './lib/format.js'
+import { accruedInterest } from './lib/invest.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -18,13 +19,14 @@ export const S = reactive({
   loanPayments: [],
   cars: [],
   carEvents: [],
+  investments: [],
   rates: { MDL: 1 },
   rateDates: {},
 })
 
 const TABLES = {
   accounts: 'accounts', categories: 'categories', transactions: 'transactions', loans: 'loans',
-  loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members',
+  loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments',
 }
 
 // ───────────── Autentificare prin Telegram ─────────────
@@ -103,7 +105,7 @@ async function fetchAll(table, order = 'id') {
 }
 
 export async function loadAll() {
-  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, rates] = await Promise.all([
+  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, rates] = await Promise.all([
     supabase.from('families').select('*').limit(1).single(),
     fetchAll('members', 'created_at'),
     fetchAll('accounts', 'sort'),
@@ -113,11 +115,12 @@ export async function loadAll() {
     fetchAll('loan_payments', 'n'),
     fetchAll('cars', 'created_at'),
     fetchAll('car_events', 'created_at'),
+    fetchAll('investments', 'created_at'),
     supabase.from('rates').select('*').order('date', { ascending: false }).limit(20),
   ])
   if (fam.error) throw fam.error
   lastLoad = Date.now()
-  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents })
+  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments })
   for (const r of rates.data || []) {
     if (!S.rateDates[r.currency]) { S.rates[r.currency] = Number(r.rate); S.rateDates[r.currency] = r.date }
   }
@@ -227,7 +230,7 @@ export const balances = computed(() => {
   const b = Object.fromEntries(S.accounts.map((a) => [a.id, Number(a.opening_balance) || 0]))
   for (const t of S.transactions) {
     const v = Number(t.amount)
-    if (t.kind === 'income') b[t.account_id] = (b[t.account_id] ?? 0) + v
+    if (t.kind === 'income' || t.kind === 'divest') b[t.account_id] = (b[t.account_id] ?? 0) + v
     else b[t.account_id] = (b[t.account_id] ?? 0) - v
     if (t.kind === 'transfer' && t.to_account_id) b[t.to_account_id] = (b[t.to_account_id] ?? 0) + Number(t.to_amount ?? t.amount)
   }
@@ -252,6 +255,36 @@ export const loanStatuses = computed(() =>
 export const debtMdl = computed(() =>
   S.loans.filter((l) => !l.closed).reduce((s, l) => s + toMdl(loanStatuses.value[l.id].remaining, l.currency), 0))
 
+// ───────────── Investiții ─────────────
+export const ACCRUING = ['gov_bond', 'tbill', 'other']
+const DAY = 86400000
+
+// Dobânda acumulată: suma × rata × zile / 365 (ca la eVMS), până la scadență
+export function investStatus(inv, today = todayISO()) {
+  const amount = Number(inv.amount) || 0
+  const end = inv.maturity_date && inv.maturity_date < today ? inv.maturity_date : today
+  const days = Math.max(0, Math.round((Date.parse(end) - Date.parse(inv.start_date)) / DAY))
+  const accrued = ACCRUING.includes(inv.kind) ? accruedInterest(amount, inv.rate, inv.start_date, end) : 0
+  const received = S.transactions
+    .filter((x) => x.investment_id === inv.id && x.kind === 'income')
+    .reduce((s, x) => s + Number(x.amount) * (accountById(x.account_id)?.currency === inv.currency ? 1 : (S.rates[accountById(x.account_id)?.currency] ?? 1) / (S.rates[inv.currency] ?? 1)), 0)
+  const returned = S.transactions.filter((x) => x.investment_id === inv.id && x.kind === 'divest')
+    .reduce((s, x) => s + Number(x.amount), 0)
+  const closed = inv.status === 'closed'
+  const value = closed ? 0 : inv.current_value != null ? Number(inv.current_value) : ACCRUING.includes(inv.kind) ? amount + accrued : amount
+  const total = inv.rate && inv.maturity_date && ACCRUING.includes(inv.kind)
+    ? accruedInterest(amount, inv.rate, inv.start_date, inv.maturity_date)
+    : null
+  return { accrued, received, returned, value, closed, expectedAtMaturity: total, days }
+}
+
+export const investStatuses = computed(() => Object.fromEntries(S.investments.map((i) => [i.id, investStatus(i)])))
+export const activeInvestments = computed(() => S.investments.filter((i) => i.status !== 'closed'))
+export const investMdl = computed(() =>
+  activeInvestments.value.reduce((s, i) => s + toMdl(investStatuses.value[i.id].value, i.currency), 0))
+export const investedMdl = computed(() =>
+  activeInvestments.value.reduce((s, i) => s + toMdl(i.amount, i.currency), 0))
+
 export const txCurrency = (t) => accountById(t.account_id)?.currency || 'MDL'
 
 // Sume într-o perioadă (în MDL); transferurile nu intră în venituri/cheltuieli
@@ -259,7 +292,7 @@ export function periodSums(from, to) {
   let inc = 0, exp = 0
   const byCat = {}, byMember = {}
   for (const t of S.transactions) {
-    if (t.date < from || t.date > to || t.kind === 'transfer') continue
+    if (t.date < from || t.date > to || !['income', 'expense'].includes(t.kind)) continue
     const v = toMdl(t.amount, txCurrency(t))
     if (t.kind === 'income') inc += v
     else {

@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, balances, activeAccounts, totalMdl, totalsByCurrency, memberById, debtMdl } from '../store.js'
+import { S, balances, activeAccounts, totalMdl, totalsByCurrency, memberById, debtMdl, investMdl, activeInvestments } from '../store.js'
 import { t } from '../lib/i18n.js'
 import { money, money0 } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -11,6 +11,7 @@ const groups = computed(() => [
   { key: 'card', title: t('cards'), icon: 'card' },
   { key: 'cash', title: t('cash'), icon: 'cash' },
   { key: 'deposit', title: t('deposits'), icon: 'piggy' },
+  { key: 'invest', title: t('invAccount'), icon: 'chart' },
 ].map((g) => ({ ...g, items: activeAccounts.value.filter((a) => a.type === g.key) })).filter((g) => g.items.length))
 const sub = (a) => {
   const m = memberById(a.member_id)
@@ -54,6 +55,12 @@ const fmtRate = (r) => String(r).replace('.', ',')
         </button>
       </div>
     </section>
+
+    <button type="button" class="bf-row bf-list bf-row--tap" @click="router.push('/investments')">
+      <div class="bf-row__icon"><Icon name="chart" /></div>
+      <div class="bf-row__body"><div class="bf-row__title">{{ t('investments') }}</div><div class="bf-row__sub">{{ t('positions', activeInvestments.length) }}</div></div>
+      <div class="bf-row__amount">{{ money0(investMdl) }}<small>MDL</small></div>
+    </button>
 
     <button type="button" class="bf-row bf-list bf-row--tap" @click="router.push('/credits')">
       <div class="bf-row__icon" style="background: var(--danger-soft); color: var(--danger);"><Icon name="bank" /></div>

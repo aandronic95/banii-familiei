@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, isOwner, totalMdl, debtMdl, periodSums, monthRange, budgetRows, loanStatuses } from '../store.js'
+import { S, me, isOwner, totalMdl, debtMdl, investMdl, periodSums, monthRange, budgetRows, loanStatuses } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
@@ -52,6 +52,11 @@ const alerts = computed(() => {
     const d = daysUntil(n.due)
     if (d <= 5) out.push({ key: 'l' + l.id, danger: d < 0, text: `${l.name}: ${money0(n.payment)} ${l.currency}`, sub: d < 0 ? dateShort(n.due) : t('inDays', d), to: '/loan/' + l.id })
   }
+  for (const i of S.investments) {
+    if (i.status === 'closed' || !i.maturity_date) continue
+    const d = daysUntil(i.maturity_date)
+    if (d <= 7) out.push({ key: 'i' + i.id, danger: false, text: `${i.name}${i.code ? ' ' + i.code : ''}`, sub: d < 0 ? dateShort(i.maturity_date) : t('matures', t('inDays', d)), to: '/investment/' + i.id })
+  }
   for (const e of S.carEvents) {
     if (e.done || !e.due_date) continue
     const d = daysUntil(e.due_date)
@@ -79,6 +84,7 @@ const alerts = computed(() => {
       <div class="bf-balance__meta" style="flex-wrap: wrap;">
         <span>{{ t('month') }}: <b class="bf-income">+{{ money0(month.inc) }}</b></span>
         <span><b class="bf-expense">−{{ money0(month.exp) }}</b></span>
+        <span v-if="investMdl > 0">{{ t('investments') }}: <b>{{ money0(investMdl) }}</b></span>
         <span v-if="debtMdl > 0">{{ t('debts') }}: <b>{{ money0(debtMdl) }}</b></span>
       </div>
     </button>
