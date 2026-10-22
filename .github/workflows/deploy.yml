@@ -111,3 +111,6 @@ jobs:
           DA=$(curl -s -o /tmp/da -w '%{http_code}' -X POST "$BASE/docs?type=export&all=1")
           echo "docs programat fără secret: $DA"
           [ "$DA" = "403" ] || { echo "::error::docs programat trebuia să ceară secretul (403), a răspuns $DA"; exit 1; }
+          PN=$(curl -s -o /tmp/pn -w '%{http_code}' -X POST "$BASE/pin" -H 'content-type: application/json' -d '{"action":"verify","pin":"1234"}')
+          echo "pin fără login: $PN"
+          [ "$PN" = "401" ] || { echo "::error::pin trebuia să ceară login (401), a răspuns $PN"; exit 1; }

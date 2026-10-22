@@ -225,3 +225,15 @@ test('bon: totalul și magazinul din textul OCR', async () => {
   assert.equal(extractReceipt(bon3).total, 1234.5)
   assert.deepEqual(extractReceipt(''), { total: null, merchant: null })
 })
+
+const pinTs = await import('../supabase/functions/_shared/pin.ts').catch((e) => { console.error(e); return null })
+test('cod de rezervă: amprentă, verificare și limită de încercări', { skip: !pinTs }, async () => {
+  const salt = pinTs.newSalt()
+  const h = await pinTs.hashPin('1234', salt)
+  assert.equal(h.length, 64)
+  assert.ok(pinTs.safeEqual(h, await pinTs.hashPin('1234', salt)))
+  assert.ok(!pinTs.safeEqual(h, await pinTs.hashPin('1235', salt)))
+  assert.notEqual(h, await pinTs.hashPin('1234', pinTs.newSalt()))
+  assert.ok(pinTs.validPin('0000')); assert.ok(!pinTs.validPin('123')); assert.ok(!pinTs.validPin('12a4'))
+  assert.equal(pinTs.lockMinutes(4), 0); assert.equal(pinTs.lockMinutes(5), 1); assert.equal(pinTs.lockMinutes(7), 4); assert.equal(pinTs.lockMinutes(20), 60)
+})

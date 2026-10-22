@@ -6,7 +6,9 @@ import { t, lang, setLang } from '../lib/i18n.js'
 import { parseAmount, money0, daysUntil, todayISO, dateLong } from '../lib/format.js'
 import { haptic } from '../lib/telegram.js'
 import { supabase } from '../lib/supabase.js'
-import { lockSupported, isLockEnabled, enableLock, disableLock, bioState } from '../lib/biometric.js'
+import { bioState, requestBio, authenticate } from '../lib/biometric.js'
+import { isLockEnabled, setLockEnabled, isBioEnabled, setBioEnabled, pinStatus, pinVerify, pinSet } from '../lib/lock.js'
+import PinPad from '../components/PinPad.vue'
 import { monthName } from '../lib/format.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
@@ -14,17 +16,64 @@ import Icon from '../components/Icon.vue'
 const router = useRouter()
 const notify = reactive({ loans: true, budget: true, weekly: true, car: true, invest: true, recurring: true, debts: true, monthly: true, backup: false, ...(me.value?.notify || {}) })
 
-// Face ID
+// Blocare: cod de rezervă obligatoriu + Face ID, dacă telefonul îl are
 const lockOn = ref(isLockEnabled())
-const lockAvail = ref(null)
-if (lockSupported()) bioState().then((s) => { lockAvail.value = s.available })
-else lockAvail.value = false
-async function toggleLock(e) {
-  const want = e.target.checked
-  const ok = want ? await enableLock(t('lockPrompt')) : await disableLock(t('lockPrompt'))
-  lockOn.value = isLockEnabled()
-  e.target.checked = lockOn.value
-  if (ok) haptic('success')
+const bioOn = ref(isBioEnabled())
+const bioAvail = ref(false)
+bioState().then((st) => { bioAvail.value = st.available })
+// Pașii foii cu tastatură: 'verify' (cod existent), 'new', 'repeat'
+const sheet = reactive({ open: false, purpose: '', step: '', first: '', current: '', error: '', busy: false })
+function openSheet(purpose, step) { Object.assign(sheet, { open: true, purpose, step, first: '', current: '', error: '', busy: false }) }
+const closeSheet = () => { sheet.open = false }
+const sheetTitle = computed(() => ({ verify: sheet.purpose === 'change' ? t('pinCurrent') : t('pinEnter'), new: sheet.purpose === 'change' ? t('pinNew') : t('pinSetTitle'), repeat: t('pinRepeat') })[sheet.step])
+const errText = (r) => (r.error === 'locked' ? t('pinLockedFor', r.retryIn) : r.error === 'network' ? t('pinNetwork') : t('pinWrong', r.left))
+
+async function finishEnable() {
+  setLockEnabled(true); lockOn.value = true
+  if (bioAvail.value && (await requestBio(t('lockPrompt'))) && (await authenticate(t('lockPrompt')))) { setBioEnabled(true); bioOn.value = true }
+  closeSheet(); haptic('success'); toast(t('pinSaved'))
+}
+
+async function onLockToggle(e) {
+  e.target.checked = lockOn.value // starea se schimbă doar după cod
+  if (!lockOn.value) {
+    const st = await pinStatus()
+    if (st.error) { toast(t('pinNetwork')); return }
+    openSheet('enable', st.hasPin ? 'verify' : 'new')
+  } else {
+    // Oprirea: Face ID sau codul
+    if (bioOn.value && (await authenticate(t('lockPrompt')))) { setLockEnabled(false); lockOn.value = false; bioOn.value = false; return }
+    openSheet('disable', 'verify')
+  }
+}
+async function onBioToggle(e) {
+  e.target.checked = bioOn.value
+  if (!bioOn.value) {
+    if ((await requestBio(t('lockPrompt'))) && (await authenticate(t('lockPrompt')))) { setBioEnabled(true); bioOn.value = true; haptic('success') }
+  } else { setBioEnabled(false); bioOn.value = false }
+}
+
+async function onPin(pin) {
+  sheet.error = ''
+  if (sheet.step === 'verify') {
+    sheet.busy = true
+    const r = await pinVerify(pin)
+    sheet.busy = false
+    if (!r.ok) { sheet.error = errText(r); return }
+    if (sheet.purpose === 'enable') return finishEnable()
+    if (sheet.purpose === 'disable') { setLockEnabled(false); lockOn.value = false; bioOn.value = false; closeSheet(); return }
+    if (sheet.purpose === 'change') { sheet.current = pin; sheet.step = 'new'; return }
+  }
+  if (sheet.step === 'new') { sheet.first = pin; sheet.step = 'repeat'; return }
+  if (sheet.step === 'repeat') {
+    if (pin !== sheet.first) { sheet.step = 'new'; sheet.first = ''; sheet.error = t('pinMismatch'); return }
+    sheet.busy = true
+    const r = await pinSet(pin, sheet.current || undefined)
+    sheet.busy = false
+    if (!r.ok) { sheet.error = errText(r); sheet.step = sheet.purpose === 'change' ? 'verify' : 'new'; return }
+    if (sheet.purpose === 'enable') return finishEnable()
+    closeSheet(); haptic('success'); toast(t('pinSaved'))
+  }
 }
 
 // Raport PDF și export Excel, trimise de bot în Telegram
@@ -160,11 +209,28 @@ const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetS
       <div class="bf-list">
         <label class="bf-row" for="lock-sw">
           <div class="bf-row__icon"><Icon name="lock" /></div>
-          <div class="bf-row__body"><div class="bf-row__title">{{ t('lockTitle') }}</div><div class="bf-row__sub">{{ lockAvail === false ? t('lockUnavailable') : t('lockSub') + '. ' + t('lockThisDevice') }}</div></div>
-          <input id="lock-sw" type="checkbox" class="sw" :checked="lockOn" :disabled="lockAvail === false" @change="toggleLock">
+          <div class="bf-row__body"><div class="bf-row__title">{{ t('lockTitle') }}</div><div class="bf-row__sub">{{ (bioAvail ? t('lockSubPin') : t('lockPinOnly')) + '. ' + t('lockThisDevice') }}</div></div>
+          <input id="lock-sw" type="checkbox" class="sw" :checked="lockOn" @change="onLockToggle">
         </label>
+        <label v-if="lockOn && bioAvail" class="bf-row" for="bio-sw">
+          <div class="bf-row__icon"><Icon name="faceid" /></div>
+          <div class="bf-row__body"><div class="bf-row__title">{{ t('lockUseBio') }}</div></div>
+          <input id="bio-sw" type="checkbox" class="sw" :checked="bioOn" @change="onBioToggle">
+        </label>
+        <button v-if="lockOn" type="button" class="bf-row bf-row--tap" @click="openSheet('change', 'verify')">
+          <div class="bf-row__icon"><Icon name="lock" /></div>
+          <div class="bf-row__body"><div class="bf-row__title">{{ t('pinChange') }}</div></div>
+          <span class="chev" aria-hidden="true">›</span>
+        </button>
       </div>
     </section>
+
+    <div v-if="sheet.open" class="sheet" role="dialog" aria-modal="true">
+      <button type="button" class="bf-btn bf-btn--ghost sheet__close" @click="closeSheet">{{ t('cancel') }}</button>
+      <div style="flex: 1; display: grid; place-items: center;">
+        <PinPad :key="sheet.step" :title="sheetTitle" :sub="sheet.step === 'new' && sheet.purpose === 'enable' ? t('pinSetSub') : ''" :error="sheet.error" :busy="sheet.busy" @done="onPin" />
+      </div>
+    </div>
 
     <div class="cap" style="display: flex; gap: 6px; align-items: flex-start;">
       <Icon name="lock" :size="16" />

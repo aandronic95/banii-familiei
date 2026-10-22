@@ -3,27 +3,55 @@ import { onMounted, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, start, refreshIfStale } from './store.js'
 import { tg, initTelegram, setBack, setChrome, BOT_USERNAME } from './lib/telegram.js'
-import { isLockEnabled, authenticate, bioState, openBioSettings, lockSupported } from './lib/biometric.js'
+import { authenticate, bioState } from './lib/biometric.js'
+import { isLockEnabled, isBioEnabled, setLockEnabled, pinVerify, pinForgot, pinReset } from './lib/lock.js'
+import PinPad from './components/PinPad.vue'
 import { t, lang } from './lib/i18n.js'
 import TabBar from './components/TabBar.vue'
+import { toast } from './components/Toast.js'
 import { toastText } from './components/Toast.js'
 
 const route = useRoute()
 const router = useRouter()
 const theme = ref('light')
 
-// Blocare cu Face ID: la deschidere și după 2 minute în fundal
-const locked = ref(lockSupported() && isLockEnabled())
-const lockMsg = ref('')
+// Blocare: Face ID (dacă e pornit și merge) sau codul de rezervă, verificat pe server.
+// Se cere la deschidere și după 2 minute în fundal.
+const locked = ref(isLockEnabled())
+const lockErr = ref('')
+const lockBusy = ref(false)
+const bioOk = ref(false)
+const resetMode = ref(false)
 let hiddenAt = 0
-async function unlock() {
-  lockMsg.value = ''
+async function tryBio() {
+  if (!isBioEnabled()) return
   const st = await bioState()
-  if (!st.available || !st.granted) { lockMsg.value = t('lockDenied'); return }
-  if (await authenticate(t('lockPrompt'))) locked.value = false
+  bioOk.value = st.available && st.granted
+  if (bioOk.value && (await authenticate(t('lockPrompt')))) { locked.value = false; lockErr.value = '' }
+}
+async function tryPin(pin) {
+  lockBusy.value = true
+  lockErr.value = ''
+  try {
+    if (resetMode.value) {
+      const r = await pinReset(pin)
+      if (r.ok) { setLockEnabled(false); locked.value = false; resetMode.value = false; toast(t('pinResetDone')); return }
+      lockErr.value = r.error === 'expired' ? t('pinExpired') : r.error === 'network' ? t('pinNetwork') : t('pinWrong', 0)
+      return
+    }
+    const r = await pinVerify(pin)
+    if (r.ok) { locked.value = false; return }
+    if (r.error === 'no_pin') { setLockEnabled(false); locked.value = false; return } // codul a fost șters de pe alt telefon
+    lockErr.value = r.error === 'locked' ? t('pinLockedFor', r.retryIn) : r.error === 'network' ? t('pinNetwork') : t('pinWrong', r.left)
+  } finally { lockBusy.value = false }
+}
+async function forgot() {
+  const r = await pinForgot()
+  if (r.ok) { resetMode.value = true; lockErr.value = ''; toast(t('pinForgotSent')) }
+  else lockErr.value = t('pinNetwork')
 }
 function relockCheck() {
-  if (lockSupported() && isLockEnabled() && hiddenAt && Date.now() - hiddenAt > 120000) { locked.value = true; unlock() }
+  if (isLockEnabled() && hiddenAt && Date.now() - hiddenAt > 120000) { locked.value = true; resetMode.value = false; tryBio() }
   hiddenAt = 0
 }
 
@@ -38,7 +66,7 @@ onMounted(() => {
   initTelegram(applyTheme)
   start()
   // Datele se reîncarcă când aplicația revine din fundal
-  if (locked.value) unlock()
+  if (locked.value) tryBio()
   tg?.onEvent?.('activated', () => { relockCheck(); refreshIfStale() })
   tg?.onEvent?.('deactivated', () => { hiddenAt = Date.now() })
   document.addEventListener('visibilitychange', () => {
@@ -66,13 +94,8 @@ watch(() => [route.fullPath, S.status], () => {
 
 <template>
   <div v-if="locked" class="gate">
-    <div>
-      <div class="bf-row__icon" style="width: 64px; height: 64px; border-radius: 20px;"><svg class="bf-icon" viewBox="0 0 24 24" style="width: 30px; height: 30px;" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
-      <h1 class="h-title">{{ t('lockLocked') }}</h1>
-      <p v-if="lockMsg" class="muted">{{ lockMsg }}</p>
-      <button class="bf-btn bf-btn--primary" @click="unlock">{{ t('lockRetry') }}</button>
-      <button v-if="lockMsg" class="link" @click="openBioSettings">{{ t('lockTitle') }} ›</button>
-    </div>
+    <PinPad :title="resetMode ? t('pinResetTitle') : t('lockLocked')" :sub="resetMode ? t('pinForgotSent') : ''" :length="resetMode ? 6 : 4"
+            :error="lockErr" :busy="lockBusy" :show-bio="bioOk && !resetMode" :show-forgot="!resetMode" @done="tryPin" @bio="tryBio" @forgot="forgot" />
   </div>
 
   <div v-else-if="S.status === 'loading'" class="gate"><div><div class="spinner" role="status" :aria-label="t('loading')"></div></div></div>

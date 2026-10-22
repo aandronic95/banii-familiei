@@ -144,3 +144,19 @@ select.inp { background-image: linear-gradient(45deg, transparent 50%, var(--ink
 /* Mod discret */
 .eye-btn { width: 40px; height: 40px; border: 0; border-radius: var(--radius-pill); background: var(--surface-2); color: var(--ink); display: grid; place-items: center; cursor: pointer; flex: none; }
 .eye-btn[aria-pressed="true"] { background: var(--brand-soft); color: var(--brand); }
+
+/* Tastatura pentru cod */
+.pin { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 100%; max-width: 320px; margin: 0 auto; outline: none; }
+.pin__lock { width: 60px; height: 60px; border-radius: 20px; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; }
+.pin__dots { display: flex; gap: 16px; margin-top: 8px; }
+.pin__dots--shake { animation: pinshake .35s; }
+@keyframes pinshake { 20%, 60% { transform: translateX(-8px) } 40%, 80% { transform: translateX(8px) } }
+.pin__dot { width: 14px; height: 14px; border-radius: 999px; box-shadow: inset 0 0 0 2px var(--ink-muted); transition: background .1s; }
+.pin__dot.on { background: var(--ink); box-shadow: none; }
+.pin__keys { display: grid; grid-template-columns: repeat(3, 76px); gap: 14px 22px; margin-top: 4px; }
+.pin__key { width: 76px; height: 76px; border-radius: 999px; border: 0; background: var(--surface-2); color: var(--ink); font: 600 28px/1 var(--font-sans); cursor: pointer; display: grid; place-items: center; }
+.pin__key:active { background: var(--line); }
+.pin__key--ghost { background: transparent; font-size: 24px; }
+.pin__key:disabled { opacity: .4; }
+.sheet { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; padding: calc(16px + var(--safe-top)) 16px calc(24px + var(--safe-bottom)); overflow-y: auto; }
+.sheet__close { align-self: flex-end; }

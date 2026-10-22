@@ -19,3 +19,6 @@ verify_jwt = false
 
 [functions.docs]
 verify_jwt = false
+
+[functions.pin]
+verify_jwt = false

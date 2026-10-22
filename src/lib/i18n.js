@@ -82,6 +82,11 @@ const D = {
     // Face ID
     lockTitle: 'Blocare cu Face ID', lockSub: 'Cere Face ID sau amprenta la deschidere', lockUnavailable: 'Telefonul sau versiunea Telegram nu permite Face ID aici.', lockPrompt: 'Deblochează Banii Familiei', lockRetry: 'Deblochează', lockLocked: 'Aplicația e blocată',
     lockDenied: 'Telegram nu are voie să folosească Face ID. Permite-l în setările telefonului sau oprește blocarea.', lockThisDevice: 'Setarea e doar pentru acest telefon.',
+    pinSetTitle: 'Alege un cod din 4 cifre', pinSetSub: 'Îl folosești când Face ID nu merge', pinRepeat: 'Repetă codul', pinMismatch: 'Codurile nu se potrivesc. Încearcă din nou.',
+    pinEnter: 'Introdu codul', pinCurrent: 'Codul actual', pinNew: 'Codul nou', pinWrong: (n) => n ? `Cod greșit. Mai ai ${n} încercări.` : 'Cod greșit.', pinLockedFor: (s) => `Prea multe încercări. Așteaptă ${Math.ceil(s / 60)} min.`,
+    pinForgot: 'Am uitat codul', pinForgotSent: 'Ți-am trimis în Telegram un cod de resetare din 6 cifre.', pinResetTitle: 'Codul din Telegram', pinResetDone: 'Codul a fost șters. Setează unul nou din Mai mult.',
+    pinExpired: 'Codul de resetare a expirat. Cere altul.', pinChange: 'Schimbă codul', pinSaved: 'Codul a fost salvat', pinDelete: 'Șterge cifra', lockUseBio: 'Folosește Face ID',
+    lockSubPin: 'Cere Face ID sau codul la deschidere', lockPinOnly: 'Cere codul la deschidere (Face ID nu e disponibil aici)', pinNetwork: 'Nu e conexiune. Încearcă din nou.',
     // rapoarte și export
     reportPdf: 'Raport lunar PDF', reportPdfSub: 'Botul îți trimite raportul în Telegram', reportSend: 'Trimite raportul', reportMonth: 'Luna', reportSent: 'Raportul a fost trimis în Telegram',
     exportTitle: 'Export Excel', exportSub: 'Toate datele într-un fișier .xlsx', exportSend: 'Trimite-mi Excel-ul', exportSent: 'Fișierul a fost trimis în Telegram', nMonthly: 'Raport lunar PDF', nMonthlySub: 'Pe 1 a fiecărei luni', nBackup: 'Backup săptămânal Excel', nBackupSub: 'Duminică, fișierul cu toate datele',
@@ -205,6 +210,11 @@ const D = {
     noGoals: 'Поставьте цель: отпуск, новая машина или подушка в 3 зарплаты.', kidPiggy: 'Копилка ребёнка', kidPiggySub: 'Пособие, подарки и накопления ребёнка', kidCreate: 'Создать копилку', kidName: (n) => `Копилка ${n}`,
     lockTitle: 'Блокировка Face ID', lockSub: 'Запрашивать Face ID или отпечаток при открытии', lockUnavailable: 'Телефон или версия Telegram не поддерживают Face ID здесь.', lockPrompt: 'Разблокировать Banii Familiei', lockRetry: 'Разблокировать', lockLocked: 'Приложение заблокировано',
     lockDenied: 'Telegram не может использовать Face ID. Разрешите в настройках телефона или отключите блокировку.', lockThisDevice: 'Настройка только для этого телефона.',
+    pinSetTitle: 'Придумайте код из 4 цифр', pinSetSub: 'Нужен, если Face ID не сработает', pinRepeat: 'Повторите код', pinMismatch: 'Коды не совпадают. Попробуйте снова.',
+    pinEnter: 'Введите код', pinCurrent: 'Текущий код', pinNew: 'Новый код', pinWrong: (n) => n ? `Неверный код. Осталось попыток: ${n}.` : 'Неверный код.', pinLockedFor: (s) => `Слишком много попыток. Подождите ${Math.ceil(s / 60)} мин.`,
+    pinForgot: 'Забыли код?', pinForgotSent: 'Отправили в Telegram код сброса из 6 цифр.', pinResetTitle: 'Код из Telegram', pinResetDone: 'Код удалён. Задайте новый в разделе «Ещё».',
+    pinExpired: 'Код сброса истёк. Запросите новый.', pinChange: 'Сменить код', pinSaved: 'Код сохранён', pinDelete: 'Стереть цифру', lockUseBio: 'Использовать Face ID',
+    lockSubPin: 'Запрашивать Face ID или код при открытии', lockPinOnly: 'Запрашивать код при открытии (Face ID здесь недоступен)', pinNetwork: 'Нет соединения. Попробуйте снова.',
     reportPdf: 'Месячный отчёт PDF', reportPdfSub: 'Бот пришлёт отчёт в Telegram', reportSend: 'Отправить отчёт', reportMonth: 'Месяц', reportSent: 'Отчёт отправлен в Telegram',
     exportTitle: 'Экспорт в Excel', exportSub: 'Все данные в файле .xlsx', exportSend: 'Прислать Excel', exportSent: 'Файл отправлен в Telegram', nMonthly: 'Месячный отчёт PDF', nMonthlySub: '1-го числа каждого месяца', nBackup: 'Еженедельный бэкап Excel', nBackupSub: 'По воскресеньям, файл со всеми данными',
     toolsTitle: 'Инструменты',
