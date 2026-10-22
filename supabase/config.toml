@@ -16,3 +16,6 @@ verify_jwt = false
 
 [functions.wallet]
 verify_jwt = false
+
+[functions.docs]
+verify_jwt = false

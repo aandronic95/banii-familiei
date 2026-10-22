@@ -5,11 +5,44 @@ import { S, me, save, setRate, refreshRates, debtMdl, investMdl, debtsSummary } 
 import { t, lang, setLang } from '../lib/i18n.js'
 import { parseAmount, money0, daysUntil, todayISO, dateLong } from '../lib/format.js'
 import { haptic } from '../lib/telegram.js'
+import { supabase } from '../lib/supabase.js'
+import { lockSupported, isLockEnabled, enableLock, disableLock, bioState } from '../lib/biometric.js'
+import { monthName } from '../lib/format.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
 
 const router = useRouter()
-const notify = reactive({ loans: true, budget: true, weekly: true, car: true, invest: true, recurring: true, debts: true, ...(me.value?.notify || {}) })
+const notify = reactive({ loans: true, budget: true, weekly: true, car: true, invest: true, recurring: true, debts: true, monthly: true, backup: false, ...(me.value?.notify || {}) })
+
+// Face ID
+const lockOn = ref(isLockEnabled())
+const lockAvail = ref(null)
+if (lockSupported()) bioState().then((s) => { lockAvail.value = s.available })
+else lockAvail.value = false
+async function toggleLock(e) {
+  const want = e.target.checked
+  const ok = want ? await enableLock(t('lockPrompt')) : await disableLock(t('lockPrompt'))
+  lockOn.value = isLockEnabled()
+  e.target.checked = lockOn.value
+  if (ok) haptic('success')
+}
+
+// Raport PDF și export Excel, trimise de bot în Telegram
+const months = (() => {
+  const [y, m] = todayISO().split('-').map(Number)
+  return [0, 1, 2, 3, 4, 5].map((k) => { const d = new Date(Date.UTC(y, m - 1 - k, 1)); return { v: d.toISOString().slice(0, 7), label: `${monthName(d.getUTCMonth())} ${d.getUTCFullYear()}` } })
+})()
+const reportMonth = ref(months[Number(todayISO().slice(8, 10)) <= 5 ? 1 : 0].v)
+const docBusy = ref('')
+async function sendDoc(type) {
+  if (docBusy.value) return
+  docBusy.value = type
+  try {
+    const { data, error } = await supabase.functions.invoke(`docs?type=${type}`, { body: type === 'report' ? { month: reportMonth.value } : {} })
+    if (error || !data?.ok) throw error || new Error('send')
+    haptic('success'); toast(t(type === 'report' ? 'reportSent' : 'exportSent'))
+  } catch (e) { console.error(e); toast(t('error', e)) } finally { docBusy.value = '' }
+}
 const fmtRate = (v) => (v ? String(v).replace('.', ',') : '')
 const rates = reactive({ EUR: fmtRate(S.rates.EUR), USD: fmtRate(S.rates.USD) })
 watch(() => [S.rates.EUR, S.rates.USD], ([e, u]) => { rates.EUR = fmtRate(e); rates.USD = fmtRate(u) })
@@ -59,7 +92,7 @@ async function saveRate(c) {
   const v = parseAmount(rates[c])
   if (v > 0) { await setRate(c, v); toast(t('saved')) }
 }
-const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub'], ['invest', 'nInvest', 'nInvestSub'], ['recurring', 'nRecurring', 'nRecurringSub'], ['debts', 'nDebts', 'nDebtsSub']]
+const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub'], ['invest', 'nInvest', 'nInvestSub'], ['recurring', 'nRecurring', 'nRecurringSub'], ['debts', 'nDebts', 'nDebtsSub'], ['monthly', 'nMonthly', 'nMonthlySub'], ['backup', 'nBackup', 'nBackupSub']]
 </script>
 
 <template>
@@ -108,6 +141,28 @@ const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetS
       <div v-if="pastRates" class="bf-card stack" style="padding: 12px 16px;">
         <div class="cap">{{ t('rateFrom', dateLong(pastRates.date)) }}</div>
         <div v-for="(v, c) in pastRates.rates" :key="c" class="kv"><span>1 {{ c }}</span><b>{{ fmtRate(v) }} MDL</b></div>
+      </div>
+    </section>
+
+    <section class="stack">
+      <div class="bf-list__head" style="padding-bottom: 0;">{{ t('toolsTitle') }}</div>
+      <div class="bf-card stack">
+        <div class="sec-head"><div><h2 class="h-sec">{{ t('reportPdf') }}</h2><div class="cap">{{ t('reportPdfSub') }}</div></div><Icon name="chart" /></div>
+        <div style="display: flex; gap: 8px;">
+          <select v-model="reportMonth" class="inp" :aria-label="t('reportMonth')" style="flex: 1;"><option v-for="m in months" :key="m.v" :value="m.v">{{ m.label }}</option></select>
+          <button type="button" class="bf-btn bf-btn--primary" :disabled="!!docBusy" @click="sendDoc('report')">{{ docBusy === 'report' ? '…' : t('reportSend') }}</button>
+        </div>
+      </div>
+      <div class="bf-card stack">
+        <div class="sec-head"><div><h2 class="h-sec">{{ t('exportTitle') }}</h2><div class="cap">{{ t('exportSub') }}</div></div><Icon name="list" /></div>
+        <button type="button" class="bf-btn bf-btn--secondary" :disabled="!!docBusy" @click="sendDoc('export')">{{ docBusy === 'export' ? '…' : t('exportSend') }}</button>
+      </div>
+      <div class="bf-list">
+        <label class="bf-row" for="lock-sw">
+          <div class="bf-row__icon"><Icon name="lock" /></div>
+          <div class="bf-row__body"><div class="bf-row__title">{{ t('lockTitle') }}</div><div class="bf-row__sub">{{ lockAvail === false ? t('lockUnavailable') : t('lockSub') + '. ' + t('lockThisDevice') }}</div></div>
+          <input id="lock-sw" type="checkbox" class="sw" :checked="lockOn" :disabled="lockAvail === false" @change="toggleLock">
+        </label>
       </div>
     </section>
 

@@ -105,3 +105,9 @@ jobs:
           A=$(curl -s -o /tmp/a -w '%{http_code}' -X POST "$BASE/tg-auth" -H 'content-type: application/json' -d '{"initData":"user=%7B%22id%22%3A1%7D&hash=00"}')
           echo "tg-auth cu semnătură falsă: $A"
           [ "$A" = "401" ] || { echo "::error::tg-auth trebuia să respingă semnătura falsă (401), a răspuns $A"; exit 1; }
+          D=$(curl -s -o /tmp/d -w '%{http_code}' -X POST "$BASE/docs?type=export" -H 'content-type: application/json' -d '{}')
+          echo "docs fără login: $D"
+          [ "$D" = "401" ] || { echo "::error::docs trebuia să ceară login (401), a răspuns $D"; exit 1; }
+          DA=$(curl -s -o /tmp/da -w '%{http_code}' -X POST "$BASE/docs?type=export&all=1")
+          echo "docs programat fără secret: $DA"
+          [ "$DA" = "403" ] || { echo "::error::docs programat trebuia să ceară secretul (403), a răspuns $DA"; exit 1; }

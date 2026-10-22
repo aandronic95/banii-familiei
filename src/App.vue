@@ -3,6 +3,7 @@ import { onMounted, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, start, refreshIfStale } from './store.js'
 import { tg, initTelegram, setBack, setChrome, BOT_USERNAME } from './lib/telegram.js'
+import { isLockEnabled, authenticate, bioState, openBioSettings, lockSupported } from './lib/biometric.js'
 import { t, lang } from './lib/i18n.js'
 import TabBar from './components/TabBar.vue'
 import { toastText } from './components/Toast.js'
@@ -10,6 +11,21 @@ import { toastText } from './components/Toast.js'
 const route = useRoute()
 const router = useRouter()
 const theme = ref('light')
+
+// Blocare cu Face ID: la deschidere și după 2 minute în fundal
+const locked = ref(lockSupported() && isLockEnabled())
+const lockMsg = ref('')
+let hiddenAt = 0
+async function unlock() {
+  lockMsg.value = ''
+  const st = await bioState()
+  if (!st.available || !st.granted) { lockMsg.value = t('lockDenied'); return }
+  if (await authenticate(t('lockPrompt'))) locked.value = false
+}
+function relockCheck() {
+  if (lockSupported() && isLockEnabled() && hiddenAt && Date.now() - hiddenAt > 120000) { locked.value = true; unlock() }
+  hiddenAt = 0
+}
 
 function applyTheme(th) {
   theme.value = th
@@ -22,8 +38,13 @@ onMounted(() => {
   initTelegram(applyTheme)
   start()
   // Datele se reîncarcă când aplicația revine din fundal
-  tg?.onEvent?.('activated', () => refreshIfStale())
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshIfStale() })
+  if (locked.value) unlock()
+  tg?.onEvent?.('activated', () => { relockCheck(); refreshIfStale() })
+  tg?.onEvent?.('deactivated', () => { hiddenAt = Date.now() })
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') hiddenAt = Date.now()
+    else { relockCheck(); refreshIfStale() }
+  })
 })
 
 // Link direct la o tranzacție (butonul „Modifică” din mesajul botului)
@@ -44,7 +65,17 @@ watch(() => [route.fullPath, S.status], () => {
 </script>
 
 <template>
-  <div v-if="S.status === 'loading'" class="gate"><div><div class="spinner" role="status" :aria-label="t('loading')"></div></div></div>
+  <div v-if="locked" class="gate">
+    <div>
+      <div class="bf-row__icon" style="width: 64px; height: 64px; border-radius: 20px;"><svg class="bf-icon" viewBox="0 0 24 24" style="width: 30px; height: 30px;" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></div>
+      <h1 class="h-title">{{ t('lockLocked') }}</h1>
+      <p v-if="lockMsg" class="muted">{{ lockMsg }}</p>
+      <button class="bf-btn bf-btn--primary" @click="unlock">{{ t('lockRetry') }}</button>
+      <button v-if="lockMsg" class="link" @click="openBioSettings">{{ t('lockTitle') }} ›</button>
+    </div>
+  </div>
+
+  <div v-else-if="S.status === 'loading'" class="gate"><div><div class="spinner" role="status" :aria-label="t('loading')"></div></div></div>
 
   <div v-else-if="S.status === 'not_telegram'" class="gate">
     <div>
