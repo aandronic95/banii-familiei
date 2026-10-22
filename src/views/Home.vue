@@ -7,6 +7,8 @@ import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js
 import TxRow from '../components/TxRow.vue'
 import BudgetBar from '../components/BudgetBar.vue'
 import Icon from '../components/Icon.vue'
+import { privacy, togglePrivacy } from '../lib/privacy.js'
+import { haptic } from '../lib/telegram.js'
 
 const router = useRouter()
 const now = new Date()
@@ -73,8 +75,11 @@ const alerts = computed(() => {
         <div class="muted" style="font: 500 13px/18px var(--font-sans);">{{ t('hello') }}, {{ me?.name }}</div>
         <h1 class="h-title">{{ title }}</h1>
       </div>
-      <div style="display: flex;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <button type="button" class="eye-btn" :aria-label="privacy ? t('showAmounts') : t('hideAmounts')" :aria-pressed="privacy" @click="togglePrivacy(); haptic('light')"><Icon :name="privacy ? 'eyeOff' : 'eye'" /></button>
+        <div style="display: flex;">
         <span v-for="(m, i) in adults" :key="m.id" class="av" :style="{ width: '32px', height: '32px', fontSize: '13px', marginLeft: i ? '-6px' : 0, boxShadow: `inset 0 0 0 2px var(--person-${m.color}), 0 0 0 2px var(--bg)` }">{{ m.name.slice(0, 1).toUpperCase() }}</span>
+        </div>
       </div>
     </div>
 

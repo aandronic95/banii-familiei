@@ -51,6 +51,7 @@ const D = {
     last4: 'Ultimele 4 cifre', openingBalance: 'Soldul acum', interest: 'Dobândă, % pe an', maturity: 'Scadența depozitului',
     archive: 'Arhivează', rateNote: (c, r) => `Curs salvat: 1 ${c} = ${r} MDL`, deleteAccountQ: 'Ștergi contul? Se poate doar dacă nu are tranzacții.',
     cantDeleteAccount: 'Contul are tranzacții. Arhivează-l în loc să-l ștergi.',
+    hideAmounts: 'Ascunde sumele', showAmounts: 'Arată sumele',
     // plăți recurente
     recurringTitle: 'Plăți recurente', recurringSub: 'Chirie, internet, abonamente, salariu', newRecurring: 'Plată recurentă nouă', editRecurring: 'Modifică plata recurentă',
     everyMonths: 'Se repetă', every1: 'Lunar', every3: 'La 3 luni', every6: 'La 6 luni', every12: 'Anual', dayOfMonth: 'Ziua din lună', nextDate: 'Următoarea plată',
@@ -180,6 +181,7 @@ const D = {
     last4: 'Последние 4 цифры', openingBalance: 'Текущий остаток', interest: 'Ставка, % годовых', maturity: 'Срок депозита',
     archive: 'В архив', rateNote: (c, r) => `Курс: 1 ${c} = ${r} MDL`, deleteAccountQ: 'Удалить счёт? Можно только если нет операций.',
     cantDeleteAccount: 'У счёта есть операции. Отправьте его в архив.',
+    hideAmounts: 'Скрыть суммы', showAmounts: 'Показать суммы',
     recurringTitle: 'Регулярные платежи', recurringSub: 'Аренда, интернет, подписки, зарплата', newRecurring: 'Новый регулярный платёж', editRecurring: 'Изменить платёж',
     everyMonths: 'Повтор', every1: 'Ежемесячно', every3: 'Раз в 3 мес.', every6: 'Раз в 6 мес.', every12: 'Ежегодно', dayOfMonth: 'День месяца', nextDate: 'Следующий платёж',
     autoAdd: 'Добавлять автоматически', autoAddSub: 'В день платежа появится в операциях', remindDay: 'Напомнить за день', remindSub: 'Бот напишет в Telegram',

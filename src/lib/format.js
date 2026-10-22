@@ -1,8 +1,10 @@
 import { lang } from './i18n.js'
+import { privacy } from './privacy.js'
 import { evalAmount, isExpression } from './calc.js'
 
 // 48 250,00 — spațiu la mii, virgulă la zecimale (la fel în ro și ru)
 export function money(n, decimals = 2) {
+  if (privacy.value) return '•••'
   const v = Number(n) || 0
   const s = Math.abs(v).toFixed(decimals).split('.')
   const int = s[0].replace(/\B(?=(\d{3})+(?!\d))/g, ' ')

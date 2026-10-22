@@ -18,7 +18,7 @@ const f = reactive({
   member_id: orig?.member_id ?? '',
   bank: orig?.bank ?? '',
   last4: orig?.last4 ?? '',
-  current: orig ? money(balances.value[orig.id]).replace(/ /g, '') : '',
+  current: orig ? String(Math.round((balances.value[orig.id] ?? 0) * 100) / 100).replace('.', ',') : '',
   interest_rate: orig?.interest_rate ?? '',
   maturity_date: orig?.maturity_date ?? '',
   archived: orig?.archived ?? false,

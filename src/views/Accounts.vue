@@ -5,6 +5,7 @@ import { S, balances, activeAccounts, totalMdl, totalsByCurrency, memberById, de
 import { t } from '../lib/i18n.js'
 import { money, money0 } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
+import { privacy, togglePrivacy } from '../lib/privacy.js'
 
 const router = useRouter()
 const groups = computed(() => [
@@ -30,7 +31,10 @@ const fmtRate = (r) => String(r).replace('.', ',')
   <main class="page">
     <div class="sec-head">
       <h1 class="h-title">{{ t('accounts') }}</h1>
-      <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 40px;" @click="router.push('/account/new')"><Icon name="plus" />{{ t('addAccount') }}</button>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <button type="button" class="eye-btn" :aria-label="privacy ? t('showAmounts') : t('hideAmounts')" :aria-pressed="privacy" @click="togglePrivacy"><Icon :name="privacy ? 'eyeOff' : 'eye'" /></button>
+        <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 40px;" @click="router.push('/account/new')"><Icon name="plus" />{{ t('addAccount') }}</button>
+      </div>
     </div>
 
     <div class="bf-card">
