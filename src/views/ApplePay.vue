@@ -107,7 +107,10 @@ const canRevoke = (d) => d.user_id === S.userId || isOwner.value
         </li>
         <li v-html="t('apS6')"></li>
       </ol>
-      <p class="hint" style="margin: 0;">{{ t('apTest') }}</p>
+      <div class="bf-banner" style="background: var(--brand-soft);">
+        <Icon name="check" />
+        <div v-html="t('apTest')"></div>
+      </div>
     </section>
 
     <section v-if="cards.length" class="stack">
