@@ -39,6 +39,24 @@ Deno.serve(async (req) => {
   const { data: member } = await db.from("members").select("id, name, telegram_id, lang, role").eq("id", dev.member_id).maybeSingle();
   if (!member || member.role === "none") return reply({ ok: false, error: "forbidden", message: "Fără acces" }, 403);
 
+  // Test: scurtătura rulată manual (fără plată) trimite câmpuri goale → doar confirmăm legătura
+  const empty = (v: unknown) => v === undefined || v === null || String(v).trim() === "";
+  if (empty(body.amount) && empty(body.merchant)) {
+    await db.from("device_tokens").update({ last_used_at: new Date().toISOString() }).eq("id", dev.id);
+    const ru = member.lang === "ru";
+    if (BOT_TOKEN && member.telegram_id) {
+      await tg(BOT_TOKEN, "sendMessage", {
+        chat_id: member.telegram_id,
+        text: ru
+          ? `✅ Apple Pay подключён (${dev.name}).
+Это была проверка, ничего не сохранено. При следующей оплате Apple Pay расход добавится сам.`
+          : `✅ Apple Pay e conectat (${dev.name}).
+A fost doar un test, nu s-a salvat nimic. La următoarea plată cu Apple Pay, cheltuiala se adaugă singură.`,
+      }).catch(() => {});
+    }
+    return reply({ ok: true, test: true, message: ru ? "✅ Подключено. Проверка, ничего не сохранено." : "✅ Conectat. Test reușit, nu s-a salvat nimic." });
+  }
+
   const parsed = parseWalletAmount(body.amount);
   if (!parsed) return reply({ ok: false, error: "amount", message: "Nu am înțeles suma" }, 400);
   const merchant = String(body.merchant ?? "").trim().slice(0, 60) || null;
