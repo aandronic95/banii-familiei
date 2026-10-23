@@ -43,3 +43,20 @@ export function nextOccurrence(iso: string, every: number, dom: number): string 
   t.setUTCDate(Math.min(dom, last));
   return t.toISOString().slice(0, 10);
 }
+
+// O plată recurentă care e de fapt rata unui credit deja introdus (aceeași sumă ±3%, în jurul aceleiași zile).
+// Se folosește ca să nu se numere rata de două ori. Întoarce creditul potrivit sau null.
+export function loanForRecurring(
+  r: { kind: string; amount: number | string; next_date: string },
+  loans: (Loan & { id?: string; closed?: boolean; currency?: string })[],
+  date: string = r.next_date,
+): (Loan & { id?: string }) | null {
+  if (r.kind !== "expense") return null;
+  const amt = Number(r.amount);
+  for (const l of loans) {
+    if (l.closed) continue;
+    const near = schedule(l).find((x) => Math.abs(Date.parse(x.due) - Date.parse(date)) <= 5 * 86400000);
+    if (near && Math.abs(near.payment - amt) <= Math.max(near.payment * 0.03, 50)) return l;
+  }
+  return null;
+}

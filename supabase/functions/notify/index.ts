@@ -1,7 +1,7 @@
 // Notificări programate (rulate zilnic și săptămânal din GitHub Actions) + actualizare curs BNM.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
-import { nextOccurrence, nextUnpaid } from "../_shared/loan.ts";
+import { loanForRecurring, nextOccurrence, nextUnpaid } from "../_shared/loan.ts";
 import { ratesFor } from "../_shared/bnm.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
@@ -117,15 +117,18 @@ async function daily(today: string) {
     const tomorrow = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10);
     const { data: famAccs } = await db.from("accounts").select("id, currency, type, archived").eq("family_id", f.id);
     const firstAcc = (famAccs ?? []).find((a) => !a.archived && a.type === "card") ?? (famAccs ?? []).find((a) => !a.archived && a.type !== "asset");
+    const { data: openLoans } = await db.from("loans").select("*").eq("family_id", f.id).eq("closed", false);
     for (const r of recs ?? []) {
+      // Dacă plata recurentă e de fapt rata unui credit introdus, n-o mai adăugăm (s-ar număra de două ori)
+      const dupLoan = loanForRecurring(r, openLoans ?? []);
       const acc = (famAccs ?? []).find((a) => a.id === r.account_id) ?? firstAcc;
       const sign = r.kind === "income" ? "+" : "−";
-      if (r.remind && r.next_date === tomorrow && (await once(`rec-soon:${r.id}:${r.next_date}`))) {
+      if (!dupLoan && r.remind && r.next_date === tomorrow && (await once(`rec-soon:${r.id}:${r.next_date}`))) {
         await send(members, "recurring", (lg) => T[lg].recSoon(r.name, sign, fmt(Number(r.amount)), acc?.currency ?? "MDL"));
       }
       let next = r.next_date, guard = 0;
       while (r.auto_add && acc && next <= today && guard++ < 6) {
-        if (await once(`rec:${r.id}:${next}`)) {
+        if (!loanForRecurring(r, openLoans ?? [], next) && (await once(`rec:${r.id}:${next}`))) {
           await db.from("transactions").insert({
             family_id: f.id, kind: r.kind, amount: r.amount, account_id: acc.id, category_id: r.category_id,
             member_id: r.member_id, date: next, merchant: r.name, note: "Plată recurentă", recurring_id: r.id,

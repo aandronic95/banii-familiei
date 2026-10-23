@@ -1,7 +1,7 @@
 import { reactive, computed } from 'vue'
 import { supabase } from './lib/supabase.js'
 import { tg, inTelegram } from './lib/telegram.js'
-import { loanStatus, nextOccurrence } from './lib/loan.js'
+import { loanStatus, nextOccurrence, loanForRecurring } from './lib/loan.js'
 import { todayISO, uuid } from './lib/format.js'
 import { cacheGet, cacheSet, cacheDel } from './lib/cache.js'
 import { toast } from './components/Toast.js'
@@ -790,6 +790,21 @@ export function forecast(days = 60, { everyday = true } = {}) {
   return { points, low, firstNeg, daily, start: points[0].bal, end: points.at(-1).bal, events }
 }
 
+// Plăți recurente care sunt de fapt rata unui credit introdus (+ cheltuielile adăugate automat de ele în lunile cu rată plătită)
+export const recurringLoanDups = computed(() => {
+  const open = S.loans.filter((l) => !l.closed)
+  const out = []
+  for (const r of S.recurring) {
+    if (!r.active) continue
+    const loan = loanForRecurring(r, open)
+    if (!loan) continue
+    const loanMonths = new Set(S.transactions.filter((x) => x.loan_id === loan.id).map((x) => x.date.slice(0, 7)))
+    const extra = S.transactions.filter((x) => x.recurring_id === r.id && x.kind === 'expense' && loanMonths.has(x.date.slice(0, 7)))
+    out.push({ rec: r, loan, extra })
+  }
+  return out
+})
+
 // Câte luni de cheltuieli acoperă banii la îndemână (carduri, cash, depozite)
 export const emergency = computed(() => {
   const target = Number(me.value?.prefs?.emergencyMonths) || 6
@@ -882,11 +897,13 @@ export function upcoming(from, to) {
       ev.push({ date: x.due, type: 'loan', title: l.name, amount: x.payment, currency: l.currency, sign: -1, to: '/credits' })
     }
   }
+  const openLoans = S.loans.filter((l) => !l.closed)
   for (const r of S.recurring) {
     if (!r.active) continue
     let d = r.next_date, guard = 0
     while (d <= to && guard++ < 40) {
-      if (d >= from) ev.push({ date: d, type: 'rec', title: r.name, amount: Number(r.amount), currency: accountById(r.account_id)?.currency || 'MDL', sign: r.kind === 'income' ? 1 : -1, to: '/recurring/' + r.id, recurring: r })
+      // rata creditului apare deja mai sus; plata recurentă identică ar dubla-o
+      if (d >= from && !loanForRecurring(r, openLoans, d)) ev.push({ date: d, type: 'rec', title: r.name, amount: Number(r.amount), currency: accountById(r.account_id)?.currency || 'MDL', sign: r.kind === 'income' ? 1 : -1, to: '/recurring/' + r.id, recurring: r })
       d = nextOccurrence(d, r.every_months, r.day_of_month)
     }
   }

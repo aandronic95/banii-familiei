@@ -1,12 +1,26 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { upcoming, liquidMdl, nextSalary, toMdl } from '../store.js'
+import { upcoming, liquidMdl, nextSalary, toMdl, recurringLoanDups, save, remove } from '../store.js'
+import { toast } from '../components/Toast.js'
+import { haptic } from '../lib/telegram.js'
 import { t } from '../lib/i18n.js'
 import { money, money0, dateLong, todayISO, monthName, daysUntil } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 
 const router = useRouter()
+const recDup = computed(() => recurringLoanDups.value[0] || null)
+const fixing = ref(false)
+async function fixRec() {
+  const x = recDup.value
+  if (!x) return
+  fixing.value = true
+  try {
+    await save('recurring', { id: x.rec.id, active: false })
+    for (const e of x.extra) await remove('transactions', e.id, { silent: true })
+    haptic('success'); toast(t('chkRecStopped', x.extra.length))
+  } catch (e) { console.error(e); toast(t('error', e)) } finally { fixing.value = false }
+}
 const today = todayISO()
 const offset = ref(0) // 0 = luna curentă
 const range = computed(() => {
@@ -49,6 +63,18 @@ const LABEL = { loan: 'calLoan', rec: 'calRec', car: 'calCar', inv: 'calInv', de
 <template>
   <main class="page">
     <h1 class="h-title">{{ t('calendarTitle') }}</h1>
+    <div v-if="recDup" class="bf-banner bf-banner--danger" style="align-items: flex-start;">
+      <Icon name="alert" />
+      <div style="flex: 1;">
+        <b>{{ t('calRecDup', recDup.rec.name, recDup.loan.name) }}</b>
+        <div class="cap">{{ t('calRecDupSub') }}</div>
+        <div v-if="recDup.extra.length" class="cap" style="margin-top: 4px;">{{ t('chkRecExtra', recDup.extra.length, money0(recDup.extra.reduce((s, e) => s + Number(e.amount), 0))) }}</div>
+        <div style="display: flex; gap: 14px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
+          <button type="button" class="bf-btn bf-btn--primary" style="min-height: 36px;" :disabled="fixing" @click="fixRec">{{ recDup.extra.length ? t('chkRecStopDel', recDup.extra.length) : t('chkRecStop') }}</button>
+          <button type="button" class="link" style="padding: 0;" @click="router.push('/recurring/' + recDup.rec.id)">{{ t('edit') }}</button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="salary" class="bf-card stack">
       <div class="bf-balance__label">{{ t('untilSalary', salary.days <= 0 ? t('inDays', 0) : t('inDays', salary.days)) }} · {{ dateLong(salary.date) }}</div>

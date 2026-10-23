@@ -345,3 +345,16 @@ test('verificare: dubluri și transferuri ascunse', async () => {
   const h = findHiddenTransfers(txs, (x) => x.amount * rate[x.account_id])
   assert.deepEqual(h.map((x) => [x.out.id, x.in.id]), [['5', '6']])
 })
+
+test('plata recurentă care dublează rata creditului e recunoscută (aplicație = server)', async () => {
+  const js = await import('../src/lib/loan.js')
+  const l = { id: 'L', principal: 750000, annual_rate: 8.2, term_months: 240, first_due: '2021-09-27' }
+  const pay = js.schedule(l).find((x) => x.due === '2026-10-27').payment
+  const rec = { kind: 'expense', amount: Math.round(pay) - 14, next_date: '2026-10-27' }
+  assert.equal(js.loanForRecurring(rec, [l])?.id, 'L')
+  assert.equal(js.loanForRecurring({ ...rec, amount: 250 }, [l]), null)          // internet: nu
+  assert.equal(js.loanForRecurring({ ...rec, next_date: '2026-10-12' }, [l]), null) // altă zi: nu
+  assert.equal(js.loanForRecurring({ ...rec, kind: 'income' }, [l]), null)
+  assert.equal(js.loanForRecurring(rec, [{ ...l, closed: true }]), null)
+  if (loanTs) assert.equal(loanTs.loanForRecurring(rec, [l])?.id, 'L')
+})

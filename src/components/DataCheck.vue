@@ -2,7 +2,7 @@
 // Verificarea datelor: dubluri și transferuri înregistrate ca venit + cheltuială (strică rapoartele)
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, save, remove, accountById, toMdl, txCurrency, savePrefs } from '../store.js'
+import { S, me, save, remove, accountById, toMdl, txCurrency, savePrefs, recurringLoanDups } from '../store.js'
 import { findDuplicates, findHiddenTransfers } from '../lib/checks.js'
 import { t } from '../lib/i18n.js'
 import { money, money0, dateShort } from '../lib/format.js'
@@ -23,7 +23,17 @@ const uncat = computed(() => {
   const l = S.transactions.filter((x) => x.kind === 'expense' && !x.category_id && x.date >= from)
   return { n: l.length, sum: l.reduce((s, x) => s + toMdl(x.amount, txCurrency(x)), 0) }
 })
-const total = computed(() => dups.value.length + transfers.value.length + (uncat.value.n ? 1 : 0))
+const recDups = computed(() => recurringLoanDups.value.filter((x) => !ignored.value.includes('rec:' + x.rec.id)))
+const total = computed(() => recDups.value.length + dups.value.length + transfers.value.length + (uncat.value.n ? 1 : 0))
+// Oprește plata recurentă (creditul are deja graficul lui) și șterge cheltuielile dublate adăugate de ea
+async function stopRec(x) {
+  busy.value = x.rec.id
+  try {
+    await save('recurring', { id: x.rec.id, active: false })
+    for (const e of x.extra) await remove('transactions', e.id, { silent: true })
+    haptic('success'); toast(t('chkRecStopped', x.extra.length))
+  } catch (e) { console.error(e); toast(t('error', e)) } finally { busy.value = '' }
+}
 const inflated = computed(() => transfers.value.reduce((s, x) => s + toMdl(x.out.amount, txCurrency(x.out)), 0))
 const dupSum = computed(() => dups.value.reduce((s, x) => s + toMdl(x.dup.amount, txCurrency(x.dup)), 0))
 
@@ -62,6 +72,18 @@ async function makeTransfer(p) {
     </button>
 
     <template v-if="open && total">
+      <template v-if="recDups.length">
+        <div class="bf-banner bf-banner--danger"><Icon name="bank" /><div><b>{{ t('chkRecLoan', recDups.length) }}</b><div class="cap">{{ t('chkRecLoanWhy') }}</div></div></div>
+        <div v-for="x in recDups" :key="x.rec.id" class="chk">
+          <div class="cap">{{ t('chkLoan') }}: <b style="color: var(--ink);">{{ x.loan.name }}</b></div>
+          <div class="cap">{{ t('chkRec') }}: <b style="color: var(--ink);">{{ x.rec.name }}</b> · {{ money(x.rec.amount) }} · {{ t('chkDay', x.rec.day_of_month) }}</div>
+          <div v-if="x.extra.length" class="cap bf-expense">{{ t('chkRecExtra', x.extra.length, money0(x.extra.reduce((s, e) => s + Number(e.amount), 0))) }}</div>
+          <div class="chk__act">
+            <button type="button" class="bf-btn bf-btn--primary" style="min-height: 36px;" :disabled="busy === x.rec.id" @click="stopRec(x)">{{ x.extra.length ? t('chkRecStopDel', x.extra.length) : t('chkRecStop') }}</button>
+            <button type="button" class="link" style="padding: 0;" @click="ignore('rec:' + x.rec.id)">{{ t('chkRecKeep') }}</button>
+          </div>
+        </div>
+      </template>
       <template v-if="transfers.length">
         <div class="bf-banner"><Icon name="swap" /><div><b>{{ t('chkTransfers', transfers.length) }}</b><div class="cap">{{ t('chkTransfersWhy', money0(inflated)) }}</div></div></div>
         <div v-for="p in transfers" :key="p.key" class="chk">

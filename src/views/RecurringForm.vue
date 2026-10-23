@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { S, me, save, remove, activeAccounts } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { parseAmount, todayISO } from '../lib/format.js'
+import { loanForRecurring } from '../lib/loan.js'
 import { confirmDialog, haptic } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
@@ -43,6 +44,7 @@ const f = reactive({
   active: orig?.active ?? true,
 })
 if (!f.next_date) f.next_date = firstDate(f.day_of_month)
+const loanDup = computed(() => (f.active === false ? null : loanForRecurring({ kind: f.kind, amount: parseAmount(f.amount), next_date: f.next_date || firstDate(f.day_of_month) }, S.loans)))
 watch(() => f.day_of_month, (d) => { const n = Math.min(31, Math.max(1, Number(d) || 1)); if (isNew) f.next_date = firstDate(n) })
 const cats = computed(() => S.categories.filter((c) => c.kind === f.kind && !c.archived))
 const err = ref('')
@@ -79,6 +81,7 @@ async function del() {
     <div class="fld"><label for="r-n">{{ t('name') }}</label><input id="r-n" v-model="f.name" class="inp" maxlength="40" :placeholder="f.kind === 'income' ? 'Salariu' : 'Internet'"></div>
     <div class="grid2">
       <div class="fld"><label for="r-a">{{ t('amount') }}</label><input id="r-a" v-model="f.amount" class="inp" inputmode="decimal"></div>
+      <div v-if="loanDup" class="bf-banner bf-banner--danger" style="grid-column: 1 / -1;"><Icon name="alert" /><div>{{ t('recLoanWarn', loanDup.name) }}</div></div>
       <div class="fld">
         <label for="r-e">{{ t('everyMonths') }}</label>
         <select id="r-e" v-model.number="f.every_months" class="inp">

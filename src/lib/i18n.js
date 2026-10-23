@@ -209,6 +209,11 @@ const D = {
     chkMakeTransfer: 'Fă-l transfer', chkNotTransfer: 'Nu e transfer', chkMadeTransfer: 'Gata, acum e transfer între conturi',
     chkDups: (n) => `${n} ${n === 1 ? 'posibilă dublură' : 'posibile dubluri'}`, chkDupsWhy: (a) => `Aceeași sumă, același cont, aceeași zi (de ex. adăugată manual și din import). În plus: ~${a} MDL.`,
     chkDelDup: 'Șterge a doua', chkNotDup: 'Nu e dublură', chkUncat: (n) => `${n} cheltuieli fără categorie`, chkUncatWhy: (a) => `${a} MDL în ultimele 3 luni nu apar la nicio categorie.`,
+    chkRecLoan: (n) => n === 1 ? 'O plată recurentă dublează rata unui credit' : `${n} plăți recurente dublează rate de credit`, chkRecLoanWhy: 'Rata e deja în graficul creditului; plata recurentă o numără a doua oară în calendar, prognoză și cheltuieli.',
+    chkLoan: 'Credit', chkRec: 'Plată recurentă', chkDay: (d) => `pe ${d}`, chkRecExtra: (n, a) => `A adăugat deja ${n} ${n === 1 ? 'cheltuială dublă' : 'cheltuieli duble'} (${a} MDL) în lunile cu rata plătită.`,
+    chkRecStop: 'Oprește plata recurentă', chkRecStopDel: (n) => `Oprește-o și șterge ${n === 1 ? 'dublura' : n + ' dubluri'}`, chkRecKeep: 'Sunt plăți diferite', chkRecStopped: (n) => n ? `Plata recurentă e oprită, ${n} ${n === 1 ? 'dublură ștearsă' : 'dubluri șterse'}` : 'Plata recurentă e oprită; rămâne doar creditul',
+    calRecDup: (r, l) => `„${r}” e aceeași rată ca la creditul „${l}”`, calRecDupSub: 'Am scos-o din calendar și din prognoză ca să nu se numere de două ori. Oprește plata recurentă; rata rămâne la Credite.',
+    recLoanWarn: (l) => `Atenție: arată ca rata creditului „${l}”, care are deja graficul lui. Nu o adăuga și aici, altfel se numără de două ori.`,
     adult: 'Adult', child: 'Copil', color: 'Culoare', bunuri: 'Bunuri', bunuriSub: 'Casă, mașină, pentru avere netă',
   },
   ru: {
@@ -382,6 +387,11 @@ const D = {
     chkMakeTransfer: 'Сделать переводом', chkNotTransfer: 'Это не перевод', chkMadeTransfer: 'Готово, теперь это перевод между счетами',
     chkDups: (n) => `Возможных дублей: ${n}`, chkDupsWhy: (a) => `Та же сумма, тот же счёт, тот же день (напр. вручную и из импорта). Лишнее: ~${a} MDL.`,
     chkDelDup: 'Удалить вторую', chkNotDup: 'Это не дубль', chkUncat: (n) => `Расходов без категории: ${n}`, chkUncatWhy: (a) => `${a} MDL за 3 месяца не попали ни в одну категорию.`,
+    chkRecLoan: (n) => n === 1 ? 'Регулярный платёж дублирует платёж по кредиту' : `Регулярных платежей, дублирующих кредит: ${n}`, chkRecLoanWhy: 'Платёж уже есть в графике кредита; регулярный платёж считает его второй раз в календаре, прогнозе и расходах.',
+    chkLoan: 'Кредит', chkRec: 'Регулярный платёж', chkDay: (d) => `${d}-го`, chkRecExtra: (n, a) => `Уже добавил двойных расходов: ${n} (${a} MDL) в месяцы с оплаченным платежом.`,
+    chkRecStop: 'Отключить регулярный платёж', chkRecStopDel: (n) => `Отключить и удалить дубли (${n})`, chkRecKeep: 'Это разные платежи', chkRecStopped: (n) => n ? `Регулярный платёж отключён, удалено дублей: ${n}` : 'Регулярный платёж отключён; остался только кредит',
+    calRecDup: (r, l) => `«${r}» — это тот же платёж, что по кредиту «${l}»`, calRecDupSub: 'Убрали его из календаря и прогноза, чтобы не считать дважды. Отключите регулярный платёж; платёж останется в Кредитах.',
+    recLoanWarn: (l) => `Внимание: похоже на платёж по кредиту «${l}», у которого уже есть график. Не добавляйте его сюда, иначе он посчитается дважды.`,
     adult: 'Взрослый', child: 'Ребёнок', color: 'Цвет', bunuri: 'Имущество', bunuriSub: 'Дом, машина — для чистых активов',
   },
 }
