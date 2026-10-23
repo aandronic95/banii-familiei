@@ -467,13 +467,25 @@ export const investedMdl = computed(() =>
 
 // ───────────── Cifre „vii”: dobânda crește secundă cu secundă ─────────────
 const msOf = (iso) => (iso ? Date.parse(iso) : null)
-const liveAccrues = (inv) => ACCRUING.includes(inv.kind) && inv.rate && inv.current_value == null && inv.status !== 'closed'
+// De la ce sumă și din ce moment crește o investiție:
+// - obligațiuni / bonuri: suma investită, de la data cumpărării (ca eVMS);
+// - P2P (Fagura) sau orice investiție cu „valoarea actuală” scrisă: de la acea valoare, din ziua în care ai scris-o,
+//   iar după fiecare plată primită (dobândă/rată) numărătoarea o ia de la capăt, ca să nu se adune de două ori.
+export function liveInfo(inv) {
+  if (!inv.rate || inv.status === 'closed' || !['gov_bond', 'tbill', 'other', 'p2p'].includes(inv.kind)) return null
+  if (ACCRUING.includes(inv.kind) && inv.current_value == null) return { base: Number(inv.amount), since: msOf(inv.start_date) }
+  const base = inv.current_value != null ? Number(inv.current_value) : Number(inv.amount)
+  let since = msOf(inv.current_value != null && inv.value_date ? inv.value_date : inv.start_date)
+  for (const x of S.transactions) if (x.investment_id === inv.id && (x.kind === 'income' || x.kind === 'divest')) since = Math.max(since, msOf(x.date))
+  return base > 0 ? { base, since } : null
+}
 
 export function liveInvestValue(inv, now = Date.now()) {
   const st = investStatuses.value[inv.id]
   if (!st || st.closed) return 0
-  if (!liveAccrues(inv)) return st.value
-  return Number(inv.amount) + liveAccrued(inv.amount, inv.rate, msOf(inv.start_date), msOf(inv.maturity_date), now)
+  const li = liveInfo(inv)
+  if (!li) return st.value
+  return li.base + liveAccrued(li.base, inv.rate, li.since, msOf(inv.maturity_date), now)
 }
 
 // Depozite cu dobândă: estimare de la ultima dobândă primită (sau de la deschiderea contului)
@@ -501,9 +513,11 @@ export function growthAt(now = Date.now()) {
   for (const i of activeInvestments.value) {
     const v = liveInvestValue(i, now)
     invest += toMdl(v, i.currency)
-    if (!liveAccrues(i)) continue
-    accrued += toMdl(v - Number(i.amount), i.currency)
-    if (!i.maturity_date || msOf(i.maturity_date) > now) daily += toMdl(perDay(i.amount, i.rate), i.currency)
+    const li = liveInfo(i)
+    if (!li) continue
+    // la obligațiuni: toată dobânda de la cumpărare; la P2P: ce s-a adunat de la ultima plată / actualizare
+    accrued += toMdl(ACCRUING.includes(i.kind) && i.current_value == null ? v - Number(i.amount) : v - li.base, i.currency)
+    if (!i.maturity_date || msOf(i.maturity_date) > now) daily += toMdl(perDay(li.base, i.rate), i.currency)
   }
   let deposit = 0
   for (const a of activeAccounts.value) {

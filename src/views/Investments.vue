@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, investStatuses, investedMdl, toMdl, memberById, growthAt, liveInvestValue } from '../store.js'
+import { S, investStatuses, investedMdl, toMdl, memberById, growthAt, liveInvestValue, liveInfo } from '../store.js'
 import { t } from '../lib/i18n.js'
 import { money, money0, dateLong, daysUntil } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -12,7 +12,7 @@ const router = useRouter()
 const showClosed = ref(false)
 const growth = computed(() => growthAt(nowMs.value))
 const live = (i) => liveInvestValue(i, nowMs.value)
-const ticks = (i) => ['gov_bond', 'tbill', 'other'].includes(i.kind) && i.rate && i.current_value == null
+const ticks = (i) => !!liveInfo(i)
 const KIND_ICON = { gov_bond: 'bank', tbill: 'bank', p2p: 'users', stocks: 'chart', other: 'piggy' }
 
 const list = computed(() => S.investments.filter((i) => showClosed.value || i.status !== 'closed'))
@@ -107,7 +107,7 @@ function badge(i) {
           <div class="bf-row__amount">
             <template v-if="investStatuses[i.id].closed">{{ money(i.amount) }}</template><AnimatedNumber v-else :value="live(i)" :flash="false" /> {{ i.currency !== 'MDL' ? i.currency : '' }}
             <small v-if="!investStatuses[i.id].closed && Math.abs(live(i) - i.amount) >= 0.0001" :class="live(i) > i.amount ? 'bf-income' : 'bf-expense'">
-              <AnimatedNumber :value="live(i) - i.amount" :decimals="ticks(i) ? 4 : 2" sign :flash="false" :duration="950" />
+              <AnimatedNumber :value="live(i) - i.amount" :decimals="ticks(i) ? 6 : 2" sign :flash="false" :duration="950" />
             </small>
             <small v-else-if="i.currency === 'MDL'">MDL</small>
           </div>
