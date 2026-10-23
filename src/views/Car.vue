@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, save, toMdl, txCurrency, monthRange, carCost } from '../store.js'
+import { S, save, toMdl, txCurrency, monthRange, carCost, assetNow } from '../store.js'
 import { t } from '../lib/i18n.js'
 import { money, money0, dateLong, daysUntil } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
@@ -44,6 +44,8 @@ const evSub = (e) => {
   if (e.due_km) bits.push(t('kmLeft', money0(Math.max(0, e.due_km - odometer.value))))
   return bits.join(' · ')
 }
+// Mașina ca bun (avere netă): valoarea estimată azi
+const asset = computed(() => S.accounts.find((a) => a.type === 'asset' && !a.archived && a.car_id === carId.value))
 // Costul pe km: 3, 6 sau 12 luni
 const costN = ref(12)
 const cost = computed(() => (car.value ? carCost(car.value.id, costN.value) : null))
@@ -87,6 +89,17 @@ async function done(e) { await save('car_events', { id: e.id, done: true }) }
         <Icon name="shield" />
         <div><b>{{ t('expiresIn', soon.title, daysUntil(soon.due_date) < 0 ? dateLong(soon.due_date) : t('inDays', daysUntil(soon.due_date))) }}</b></div>
       </div>
+
+      <button v-if="asset" type="button" class="bf-banner" style="border: 0; text-align: left; cursor: pointer; background: var(--surface); box-shadow: var(--shadow-card);" @click="router.push('/account/' + asset.id)">
+        <Icon name="chart" />
+        <div style="flex: 1;"><b>{{ t('carWorth', money0(assetNow(asset)), asset.currency) }}</b><div class="cap">{{ Number(asset.depreciation) ? t('assetDepShort', String(Number(asset.depreciation)).replace('.', ',')) + ' · ' : '' }}{{ t('inNetWorth') }}</div></div>
+        <span class="chev" aria-hidden="true">›</span>
+      </button>
+      <button v-else type="button" class="bf-banner" style="border: 0; text-align: left; cursor: pointer; background: var(--brand-soft);" @click="router.push({ path: '/account/new', query: { type: 'asset', car: car.id } })">
+        <Icon name="plus" />
+        <div style="flex: 1;"><b>{{ t('carAddAsset') }}</b><div class="cap">{{ t('carAddAssetSub') }}</div></div>
+        <span class="chev" aria-hidden="true">›</span>
+      </button>
 
       <div class="bf-card stack">
         <div class="sec-head"><h2 class="h-sec">{{ t('carCostTitle') }}</h2></div>

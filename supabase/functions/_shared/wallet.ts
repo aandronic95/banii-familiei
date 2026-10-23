@@ -35,7 +35,7 @@ const norm = (s: unknown) => String(s ?? "").toLowerCase().normalize("NFD").repl
 
 // Alege contul după numele cardului din Wallet: alias → ultimele 4 cifre → nume → bancă
 export function matchAccount(card: unknown, currency: string, accounts: Acc[], memberId?: string | null): { account: Acc | null; sure: boolean } {
-  const list = accounts.filter((a) => !a.archived);
+  const list = accounts.filter((a) => !a.archived && a.type !== "asset");
   const c = norm(card);
   const digits = String(card ?? "").match(/\d{4}(?!.*\d{4})/)?.[0];
   const pick = (f: (a: Acc) => boolean) => {

@@ -13,10 +13,10 @@ const MONTHS = {
 };
 export const L = {
   ro: { report: "Raport lunar", income: "Venituri", expense: "Cheltuieli", saved: "Economisit", byCat: "Cheltuieli pe categorii", byPerson: "Pe persoană",
-    budgets: "Bugete", top: "Cele mai mari cheltuieli", accounts: "Conturi", net: "Avere netă", assets: "Conturi", invest: "Investiții", debts: "Credite", owed: "Datorii personale (net)",
+    budgets: "Bugete", top: "Cele mai mari cheltuieli", accounts: "Conturi", net: "Avere netă", assets: "Conturi", property: "Bunuri", invest: "Investiții", debts: "Credite", owed: "Datorii personale (net)",
     none: "fără categorie", common: "Comun", vsPrev: "față de luna trecută", over: "depășit", generated: "Generat", caption: (m: string) => `📊 Raportul pentru ${m}`, exportCap: "📦 Toate datele familiei (Excel)" },
   ru: { report: "Месячный отчёт", income: "Доходы", expense: "Расходы", saved: "Сэкономлено", byCat: "Расходы по категориям", byPerson: "По людям",
-    budgets: "Бюджеты", top: "Самые крупные расходы", accounts: "Счета", net: "Чистые активы", assets: "Счета", invest: "Инвестиции", debts: "Кредиты", owed: "Личные долги (нетто)",
+    budgets: "Бюджеты", top: "Самые крупные расходы", accounts: "Счета", net: "Чистые активы", assets: "Счета", property: "Имущество", invest: "Инвестиции", debts: "Кредиты", owed: "Личные долги (нетто)",
     none: "без категории", common: "Общий", vsPrev: "к прошлому месяцу", over: "превышен", generated: "Создано", caption: (m: string) => `📊 Отчёт за ${m}`, exportCap: "📦 Все данные семьи (Excel)" },
 };
 const fmt = (n: number, d = 0) => (n < 0 ? "−" : "") + Math.abs(n).toFixed(d).replace(".", ",").replace(/\B(?=(\d{3})+(?!\d))/g, " ");
@@ -28,6 +28,13 @@ const FONT_SOURCES = [
   ["https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io@main/fonts/NotoSans/hinted/ttf/NotoSans-Regular.ttf", "https://cdn.jsdelivr.net/gh/notofonts/notofonts.github.io@main/fonts/NotoSans/hinted/ttf/NotoSans-Bold.ttf"],
   ["https://unpkg.com/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans.ttf", "https://unpkg.com/dejavu-fonts-ttf@2.37.3/ttf/DejaVuSans-Bold.ttf"],
 ];
+// Valoarea unui bun după depreciere (la fel ca în aplicație)
+function assetValueTs(value: number, dep: number | null, from: string, at: string) {
+  const d = Number(dep) || 0;
+  if (!d || from === at) return Number(value) || 0;
+  const years = (Date.parse(at) - Date.parse(from)) / (365.25 * 86400000);
+  return Math.round(Number(value) * Math.pow(1 - d / 100, years) * 100) / 100;
+}
 export function setFonts(reg: Uint8Array, bold: Uint8Array) { fontCache = { reg, bold }; }
 async function fonts() {
   if (fontCache) return fontCache;
@@ -153,22 +160,24 @@ export async function buildReport(F: any, month: string, lang: "ro" | "ru") {
 
   // Conturi și avere netă
   section(T.net);
-  let assets = 0;
+  let assets = 0, property = 0;
+  const today = new Date().toISOString().slice(0, 10);
   for (const a of F.accounts.filter((a: any) => !a.archived)) {
     need(16);
-    const b = F.balances[a.id] ?? 0; assets += F.toMdl(b, a.currency);
+    const b = a.type === "asset" ? assetValueTs(a.opening_balance, a.depreciation, a.value_date ?? today, today) : F.balances[a.id] ?? 0;
+    if (a.type === "asset") property += F.toMdl(b, a.currency); else assets += F.toMdl(b, a.currency);
     text(fit(a.name, 300), M, 10); right(`${fmt(b, 2)} ${a.currency}`, W - M, 10); yy -= 16;
   }
   const inv = F.investments.filter((i: any) => i.status !== "closed").reduce((s: number, i: any) => s + F.toMdl(i.current_value ?? i.amount, i.currency), 0);
   const loans = F.loans.filter((l: any) => !l.closed).reduce((s: number, l: any) => s + F.toMdl(F.loanLeft(l), l.currency), 0);
   const owed = F.debts.filter((d: any) => !d.settled).reduce((s: number, d: any) => s + F.toMdl((Number(d.amount) - Number(d.paid)) * (d.direction === "owed_to_us" ? 1 : -1), d.currency), 0);
   yy -= 6; need(80);
-  for (const [label, v] of [[T.assets, assets], [T.invest, inv], [T.debts, -loans], [T.owed, owed]] as [string, number][]) {
+  for (const [label, v] of [[T.assets, assets], [T.property, property], [T.invest, inv], [T.debts, -loans], [T.owed, owed]] as [string, number][]) {
     if (!v) continue;
     text(label, M, 10, reg, C.muted); right(`${fmt(v)} MDL`, W - M, 10); yy -= 16;
   }
   page.drawLine({ start: { x: M, y: yy + 10 }, end: { x: W - M, y: yy + 10 }, thickness: 0.6, color: C.line });
-  yy -= 4; text(T.net, M, 12, bold); right(`${fmt(assets + inv - loans + owed)} MDL`, W - M, 12, bold);
+  yy -= 4; text(T.net, M, 12, bold); right(`${fmt(assets + property + inv - loans + owed)} MDL`, W - M, 12, bold);
 
   // Subsol pe fiecare pagină
   const pages = pdf.getPages();

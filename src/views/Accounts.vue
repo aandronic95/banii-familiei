@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, balances, activeAccounts, totalMdl, totalsByCurrency, memberById, debtMdl, activeInvestments, growthAt, depositLive } from '../store.js'
+import { S, balances, activeAccounts, totalMdl, totalsByCurrency, memberById, debtMdl, activeInvestments, growthAt, depositLive, assetAccounts, assetNow, assetsMdl } from '../store.js'
 import { t } from '../lib/i18n.js'
 import { money, money0 } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -27,6 +27,8 @@ const sub = (a) => {
 }
 const growth = computed(() => growthAt(nowMs.value))
 const dep = (a) => depositLive(a, nowMs.value)
+const AK_ICON = { car: 'car', home: 'home', land: 'globe', other: 'tag' }
+const assetSub = (a) => [t('ak_' + (a.asset_kind || 'other')), Number(a.depreciation) ? t('assetDepShort', String(Number(a.depreciation)).replace('.', ',')) : null].filter(Boolean).join(' · ')
 const openLoans = computed(() => S.loans.filter((l) => !l.closed).length)
 const fmtRate = (r) => String(r).replace('.', ',')
 </script>
@@ -64,6 +66,25 @@ const fmtRate = (r) => String(r).replace('.', ',')
       </div>
     </section>
 
+    <section>
+      <div class="bf-list__head" style="display: flex; justify-content: space-between; gap: 8px;">
+        <span>{{ t('bunuri') }}</span>
+        <span v-if="assetsMdl" style="text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums;">{{ money0(assetsMdl) }} MDL</span>
+      </div>
+      <div class="bf-list">
+        <button v-for="a in assetAccounts" :key="a.id" type="button" class="bf-row bf-row--tap" @click="router.push('/account/' + a.id)">
+          <div class="bf-row__icon"><Icon :name="AK_ICON[a.asset_kind] || 'tag'" /></div>
+          <div class="bf-row__body"><div class="bf-row__title">{{ a.name }}</div><div class="bf-row__sub">{{ assetSub(a) }}</div></div>
+          <div class="bf-row__amount">{{ money0(assetNow(a)) }}<small>{{ a.currency }}</small></div>
+        </button>
+        <button type="button" class="bf-row bf-row--tap" @click="router.push({ path: '/account/new', query: { type: 'asset' } })">
+          <div class="bf-row__icon"><Icon name="plus" /></div>
+          <div class="bf-row__body"><div class="bf-row__title">{{ t('assetAdd') }}</div><div class="bf-row__sub">{{ t('bunuriSub') }}</div></div>
+          <span class="chev" aria-hidden="true">›</span>
+        </button>
+      </div>
+    </section>
+
     <button type="button" class="bf-row bf-list bf-row--tap" @click="router.push('/investments')">
       <div class="bf-row__icon"><Icon name="chart" /></div>
       <div class="bf-row__body"><div class="bf-row__title">{{ t('investments') }}</div><div class="bf-row__sub">{{ t('positions', activeInvestments.length) }}</div></div>
@@ -76,6 +97,6 @@ const fmtRate = (r) => String(r).replace('.', ',')
       <div class="bf-row__amount" :class="{ 'bf-expense': debtMdl > 0 }">{{ money0(debtMdl) }}<small>{{ t('toPay') }}</small></div>
     </button>
 
-    <p class="hint">{{ t('assetsHint') }}</p>
+
   </main>
 </template>

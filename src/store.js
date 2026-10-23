@@ -6,7 +6,7 @@ import { todayISO, uuid } from './lib/format.js'
 import { cacheGet, cacheSet, cacheDel } from './lib/cache.js'
 import { toast } from './components/Toast.js'
 import { t as tr } from './lib/i18n.js'
-import { accruedInterest, liveAccrued, perDay } from './lib/invest.js'
+import { accruedInterest, liveAccrued, perDay, assetValue } from './lib/invest.js'
 import { detectSubscriptions, suggestBudget } from './lib/insights.js'
 import { schedule } from './lib/loan.js'
 
@@ -418,7 +418,13 @@ export const balances = computed(() => {
   return b
 })
 
-export const activeAccounts = computed(() => S.accounts.filter((a) => !a.archived))
+// Conturile cu bani (fără bunuri) — în ele se fac tranzacții
+export const activeAccounts = computed(() => S.accounts.filter((a) => !a.archived && a.type !== 'asset'))
+
+// Bunuri: mașină, casă, teren — doar pentru averea netă
+export const assetAccounts = computed(() => S.accounts.filter((a) => !a.archived && a.type === 'asset'))
+export const assetNow = (a, iso = todayISO()) => assetValue(a.opening_balance, a.depreciation, a.value_date || (a.created_at || '').slice(0, 10) || iso, iso)
+export const assetsMdl = computed(() => assetAccounts.value.reduce((s, a) => s + toMdl(assetNow(a), a.currency), 0))
 
 export const totalMdl = computed(() =>
   activeAccounts.value.reduce((s, a) => s + toMdl(balances.value[a.id] ?? 0, a.currency), 0))
@@ -573,8 +579,13 @@ export function netWorthAt(iso) {
     else bal[x.account_id] = (bal[x.account_id] ?? 0) - v
     if (x.kind === 'transfer' && x.to_account_id) bal[x.to_account_id] = (bal[x.to_account_id] ?? 0) + Number(x.to_amount ?? x.amount)
   }
-  let assets = 0
-  for (const a of S.accounts) assets += toMdl(bal[a.id] ?? 0, a.currency)
+  let assets = 0, property = 0
+  for (const a of S.accounts) {
+    if (a.type === 'asset') {
+      if (a.archived || (a.acquired_date && a.acquired_date > iso)) continue
+      property += toMdl(assetNow(a, iso), a.currency)
+    } else assets += toMdl(bal[a.id] ?? 0, a.currency)
+  }
 
   let invest = 0
   for (const i of S.investments) {
@@ -599,7 +610,7 @@ export function netWorthAt(iso) {
     if (l.closed && rem <= 0) continue
     debt += toMdl(rem, l.currency)
   }
-  return { assets, invest, debt, net: assets + invest - debt }
+  return { assets, property, invest, debt, net: assets + property + invest - debt }
 }
 
 // Ultimele n luni: valoarea la sfârșitul fiecărei luni (luna curentă = azi)

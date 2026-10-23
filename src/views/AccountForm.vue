@@ -1,9 +1,10 @@
 <script setup>
 import { reactive, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, save, remove, balances, accountById } from '../store.js'
+import { S, save, remove, balances, accountById, assetNow } from '../store.js'
 import { t } from '../lib/i18n.js'
-import { parseAmount, money } from '../lib/format.js'
+import { parseAmount, money, money0, todayISO } from '../lib/format.js'
+import { assetValue } from '../lib/invest.js'
 import { confirmDialog, alertDialog, haptic } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
 
@@ -23,7 +24,26 @@ const f = reactive({
   maturity_date: orig?.maturity_date ?? '',
   archived: orig?.archived ?? false,
   wallet_alias: orig?.wallet_alias ?? '',
+  // bunuri
+  asset_kind: orig?.asset_kind ?? (route.query.car ? 'car' : 'car'),
+  car_id: orig?.car_id ?? (route.query.car || S.cars[0]?.id || ''),
+  depreciation: orig?.depreciation != null ? String(orig.depreciation).replace('.', ',') : '12',
+  acquired_date: orig?.acquired_date ?? '',
 })
+if (isNew && f.type === 'asset' && !f.name) {
+  const car = S.cars.find((c) => c.id === f.car_id)
+  if (car) f.name = car.name
+}
+// Valoarea de azi a bunului (după depreciere) e cea pe care o modifici
+if (orig?.type === 'asset') f.current = String(assetNow(orig)).replace('.', ',')
+const DEP = { car: '12', home: '0', land: '0', other: '10' }
+function setKind(k) {
+  if (f.depreciation === DEP[f.asset_kind] || f.depreciation === '') f.depreciation = DEP[k]
+  f.asset_kind = k
+  if (k === 'car' && !f.name) f.name = S.cars.find((c) => c.id === f.car_id)?.name || ''
+}
+const in5 = computed(() => assetValue(parseAmount(f.current), parseAmount(f.depreciation), todayISO(), new Date(Date.now() + 5 * 365.25 * 86400000).toISOString().slice(0, 10)))
+const isAsset = computed(() => f.type === 'asset')
 const busy = ref(false)
 const err = ref('')
 const hasTx = computed(() => orig && S.transactions.some((x) => x.account_id === orig.id || x.to_account_id === orig.id))
@@ -34,7 +54,9 @@ async function submit() {
   busy.value = true
   try {
     const desired = parseAmount(f.current)
-    const opening = orig ? Math.round((desired - (balances.value[orig.id] - Number(orig.opening_balance))) * 100) / 100 : desired
+    const opening = isAsset.value ? desired
+      : orig ? Math.round((desired - (balances.value[orig.id] - Number(orig.opening_balance))) * 100) / 100 : desired
+    if (isAsset.value && !(desired > 0)) { err.value = t('assetValueReq'); busy.value = false; return }
     await save('accounts', {
       ...(orig ? { id: orig.id } : { sort: S.accounts.length + 1 }),
       name: f.name.trim(), type: f.type, currency: f.currency, member_id: f.member_id || null,
@@ -43,6 +65,9 @@ async function submit() {
       maturity_date: f.type === 'deposit' && f.maturity_date ? f.maturity_date : null,
       archived: f.archived,
       wallet_alias: f.type === 'card' ? f.wallet_alias.trim() || null : null,
+      ...(isAsset.value
+        ? { asset_kind: f.asset_kind, car_id: f.asset_kind === 'car' && f.car_id ? f.car_id : null, depreciation: parseAmount(f.depreciation) || 0, value_date: todayISO(), acquired_date: f.acquired_date || null, bank: null, last4: null }
+        : { asset_kind: null, car_id: null, depreciation: null, value_date: null, acquired_date: null }),
     })
     haptic('success'); toast(t('saved')); router.back()
   } catch (e) { console.error(e); err.value = t('error', e) } finally { busy.value = false }
@@ -59,8 +84,19 @@ async function del() {
   <main class="page page--form">
     <h1 class="h-title">{{ isNew ? t('newAccount') : t('editAccount') }}</h1>
 
-    <div class="seg" style="grid-template-columns: repeat(4, minmax(0, 1fr));" role="group" :aria-label="t('type')">
-      <button v-for="k in ['card', 'cash', 'deposit', 'invest']" :key="k" type="button" :class="{ on: f.type === k }" @click="f.type = k">{{ t(k === 'card' ? 'cards' : k === 'cash' ? 'cash' : k === 'deposit' ? 'deposits' : 'invAccount').split(' ')[0] }}</button>
+    <div class="seg" style="grid-template-columns: repeat(5, minmax(0, 1fr));" role="group" :aria-label="t('type')">
+      <button v-for="k in ['card', 'cash', 'deposit', 'invest', 'asset']" :key="k" type="button" :class="{ on: f.type === k }" :disabled="!isNew && hasTx && k === 'asset'" @click="f.type = k">{{ t(k === 'card' ? 'cards' : k === 'cash' ? 'cash' : k === 'deposit' ? 'deposits' : k === 'invest' ? 'invAccount' : 'bunuri').split(' ')[0] }}</button>
+    </div>
+    <p v-if="isAsset" class="hint" style="margin: 0;">{{ t('assetHint') }}</p>
+    <div v-if="isAsset" class="fld">
+      <span class="lbl">{{ t('assetKind') }}</span>
+      <div class="seg" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+        <button v-for="k in ['car', 'home', 'land', 'other']" :key="k" type="button" :class="{ on: f.asset_kind === k }" @click="setKind(k)">{{ t('ak_' + k) }}</button>
+      </div>
+    </div>
+    <div v-if="isAsset && f.asset_kind === 'car' && S.cars.length" class="fld">
+      <label for="a-car">{{ t('assetCar') }}</label>
+      <select id="a-car" v-model="f.car_id" class="inp"><option value="">—</option><option v-for="c in S.cars" :key="c.id" :value="c.id">{{ c.name }}</option></select>
     </div>
     <p v-if="f.type === 'invest'" class="hint" style="margin: 0;">{{ t('invAccHint') }}</p>
 
@@ -73,7 +109,15 @@ async function del() {
       </div>
     </div>
 
-    <div class="fld"><label for="a-bal">{{ t('openingBalance') }}, {{ f.currency }}</label><input id="a-bal" v-model="f.current" class="inp" inputmode="decimal" placeholder="0,00"></div>
+    <div class="fld"><label for="a-bal">{{ isAsset ? t('assetValue') : t('openingBalance') }}, {{ f.currency }}</label><input id="a-bal" v-model="f.current" class="inp" inputmode="decimal" placeholder="0,00">
+      <span v-if="isAsset" class="hint">{{ t('assetValueHint') }}</span></div>
+    <template v-if="isAsset">
+      <div class="grid2">
+        <div class="fld"><label for="a-dep">{{ t('assetDep') }}</label><input id="a-dep" v-model="f.depreciation" class="inp" inputmode="decimal"></div>
+        <div class="fld"><label for="a-acq">{{ t('assetAcquired') }}</label><input id="a-acq" v-model="f.acquired_date" type="date" class="inp" :max="todayISO()"></div>
+      </div>
+      <p v-if="parseAmount(f.depreciation) > 0 && parseAmount(f.current) > 0" class="hint" style="margin: 0;">{{ t('assetIn5', money0(in5), f.currency) }}</p>
+    </template>
 
     <div class="fld">
       <label for="a-mem">{{ t('owner') }}</label>
@@ -83,7 +127,7 @@ async function del() {
       </select>
     </div>
 
-    <div v-if="f.type !== 'cash'" class="grid2">
+    <div v-if="f.type !== 'cash' && !isAsset" class="grid2">
       <div class="fld"><label for="a-bank">{{ t('bank') }}</label><input id="a-bank" v-model="f.bank" class="inp" maxlength="30"></div>
       <div v-if="f.type === 'card'" class="fld"><label for="a-l4">{{ t('last4') }}</label><input id="a-l4" v-model="f.last4" class="inp" inputmode="numeric" maxlength="4"></div>
       <div v-else class="fld"><label for="a-int">{{ t('interest') }}</label><input id="a-int" v-model="f.interest_rate" class="inp" inputmode="decimal"></div>

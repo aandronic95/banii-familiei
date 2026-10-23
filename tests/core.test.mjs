@@ -314,3 +314,12 @@ test('restaurare din backup: nu dublează, potrivește conturile și categoriile
   assert.equal(p.insert[2].to_account_id, 'a2')
   assert.equal(p.skipped.length, 1); assert.equal(p.skipped[0].why, 'account')
 })
+
+test('bunuri: mașina pierde din valoare în timp', async () => {
+  const { assetValue } = await import('../src/lib/invest.js')
+  assert.equal(assetValue(10000, 12, '2026-10-23', '2026-10-23'), 10000)
+  assert.ok(Math.abs(assetValue(10000, 12, '2026-10-23', '2027-10-23') - 8800) < 2)
+  assert.ok(Math.abs(assetValue(10000, 12, '2026-10-23', '2028-10-22') - 7744) < 3)
+  assert.equal(assetValue(10000, 0, '2026-10-23', '2030-01-01'), 10000)
+  assert.ok(Math.abs(assetValue(8800, 12, '2027-10-23', '2026-10-23') - 10000) < 3) // înapoi în timp: valoarea era mai mare
+})

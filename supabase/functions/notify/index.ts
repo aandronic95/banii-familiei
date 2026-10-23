@@ -116,7 +116,7 @@ async function daily(today: string) {
     const { data: recs } = await db.from("recurring").select("*").eq("family_id", f.id).eq("active", true);
     const tomorrow = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10);
     const { data: famAccs } = await db.from("accounts").select("id, currency, type, archived").eq("family_id", f.id);
-    const firstAcc = (famAccs ?? []).find((a) => !a.archived && a.type === "card") ?? (famAccs ?? []).find((a) => !a.archived);
+    const firstAcc = (famAccs ?? []).find((a) => !a.archived && a.type === "card") ?? (famAccs ?? []).find((a) => !a.archived && a.type !== "asset");
     for (const r of recs ?? []) {
       const acc = (famAccs ?? []).find((a) => a.id === r.account_id) ?? firstAcc;
       const sign = r.kind === "income" ? "+" : "−";
@@ -231,7 +231,7 @@ async function weekly(today: string) {
     }
     const top = Object.values(byCat).sort((a, b) => b.v - a.v).slice(0, 3);
 
-    const { data: accs } = await db.from("accounts").select("id, currency").eq("family_id", f.id).eq("archived", false);
+    const { data: accs } = await db.from("accounts").select("id, currency").eq("family_id", f.id).eq("archived", false).neq("type", "asset");
     const { data: bals } = await db.from("account_balances").select("account_id, balance").in("account_id", (accs ?? []).map((a) => a.id));
     const curOf = Object.fromEntries((accs ?? []).map((a) => [a.id, a.currency]));
     const total = (bals ?? []).reduce((s, b) => s + toMdl(Number(b.balance), curOf[b.account_id]), 0);

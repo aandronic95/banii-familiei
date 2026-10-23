@@ -80,7 +80,7 @@ async function del() {
       <label for="l-acc">{{ t('payFrom') }}</label>
       <select id="l-acc" v-model="f.account_id" class="inp">
         <option value="">—</option>
-        <option v-for="a in S.accounts.filter((x) => !x.archived)" :key="a.id" :value="a.id">{{ a.name }} · {{ a.currency }}</option>
+        <option v-for="a in S.accounts.filter((x) => !x.archived && x.type !== 'asset')" :key="a.id" :value="a.id">{{ a.name }} · {{ a.currency }}</option>
       </select>
     </div>
     <div v-if="preview" class="bf-card stack">

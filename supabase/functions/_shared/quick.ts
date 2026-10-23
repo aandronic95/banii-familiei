@@ -76,7 +76,7 @@ export function parseQuick(input: string): Quick | null {
 
 // Contul: cash dacă s-a scris „cash”; altfel un card numit în mesaj; altfel primul card al persoanei
 export function pickAccount(q: Quick, accounts: Acc[], memberId?: string | null): Acc | null {
-  const list = accounts.filter((a) => !a.archived);
+  const list = accounts.filter((a) => !a.archived && a.type !== "asset");
   if (q.cash) {
     return list.find((a) => a.type === "cash" && a.currency === q.currency) ?? list.find((a) => a.type === "cash") ?? null;
   }
