@@ -3,8 +3,9 @@ import { reactive, ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
-import { parseAmount, todayISO, money, isExpression } from '../lib/format.js'
-import { confirmDialog, haptic } from '../lib/telegram.js'
+import { parseAmount, todayISO, money, isExpression, dateShort } from '../lib/format.js'
+import { confirmDialog, haptic, qrSupported, scanQr, openLink } from '../lib/telegram.js'
+import { parseFiscalQr } from '../lib/fiscal.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
 import { supabase } from '../lib/supabase.js'
@@ -39,7 +40,27 @@ const f = reactive({
   full_tank: orig?.full_tank ?? true,
   investment_id: orig?.investment_id ?? route.query.investment ?? null,
   tags: orig?.tags ? [...orig.tags] : route.query.tag ? [normTag(route.query.tag)] : [],
+  fiscal_ref: orig?.fiscal_ref ?? null,
 })
+
+// Codul QR de pe bonul fiscal: suma și data exacte; magazinul îl învățăm din bonurile anterioare de la același aparat
+const qr = ref(null) // { url, dup, learned }
+async function scanReceiptQr() {
+  const text = await scanQr(t('qrHint'), (x) => !!parseFiscalQr(x))
+  const r = text && parseFiscalQr(text)
+  if (!r) return
+  haptic('success')
+  if (r.amount) f.amount = String(r.amount).replace('.', ',')
+  if (r.date) f.date = r.date
+  f.fiscal_ref = r.ref
+  const dup = r.ref ? S.transactions.find((x) => x.fiscal_ref === r.ref && x.id !== orig?.id) : null
+  const prev = r.code ? [...S.transactions].filter((x) => x.fiscal_ref?.startsWith(r.code + '/') && x.id !== orig?.id).sort((a, b) => b.date.localeCompare(a.date))[0] : null
+  if (prev) {
+    if (!f.merchant && prev.merchant) f.merchant = prev.merchant
+    if (!f.category_id && prev.category_id && cats.value.some((c) => c.id === prev.category_id)) f.category_id = prev.category_id
+  }
+  qr.value = { url: r.url, dup, learned: !!prev, amount: r.amount, date: r.date }
+}
 
 // Etichete: #vacanță, #renovare — se adaugă cu Enter, virgulă sau spațiu
 const tagInput = ref('')
@@ -146,6 +167,7 @@ async function submit() {
       full_tank: isCar.value && f.car_kind === 'fuel' ? !!f.full_tank : null,
       investment_id: f.kind === 'transfer' ? null : f.investment_id || null,
       tags: f.kind === 'transfer' ? [] : f.tags,
+      fiscal_ref: f.kind === 'transfer' ? null : f.fiscal_ref,
     }
     if (parts.value.length) {
       if (parts.value.some((p) => !(parseAmount(p.amount) > 0) || !p.category_id)) { err.value = t('splitPartBad'); return }
@@ -307,6 +329,15 @@ async function del() {
         <button type="button" class="link" style="padding: 0;" @click="useOcr">{{ t('ocrUse') }}</button>
       </div>
       <div v-else-if="ocr.state === 'none'" class="hint">{{ t('ocrNone') }}</div>
+      <div v-if="qr" class="bf-banner" :class="{ 'bf-banner--danger': qr.dup }" :style="qr.dup ? '' : 'background: var(--brand-soft);'">
+        <Icon :name="qr.dup ? 'alert' : 'check'" />
+        <div style="flex: 1;">
+          <div v-if="qr.dup"><b>{{ t('qrDup') }}</b> {{ dateShort(qr.dup.date) }} · {{ money(qr.dup.amount) }}</div>
+          <div v-else>{{ t('qrRead', qr.amount ? money(qr.amount) : '—', qr.date ? dateShort(qr.date) : '—') }}<span v-if="qr.learned"> · {{ t('qrLearned') }}</span></div>
+          <button v-if="qr.url" type="button" class="link" style="padding: 4px 0 0;" @click="openLink(qr.url)">{{ t('qrOpen') }}</button>
+        </div>
+      </div>
+      <button v-if="qrSupported() && f.kind === 'expense'" type="button" class="bf-btn bf-btn--secondary bf-btn--block" @click="scanReceiptQr"><Icon name="qr" />{{ t('qrScan') }}</button>
       <input ref="fileInput" id="rcpt" type="file" accept="image/*" capture="environment" class="file-hidden" @change="pickFile">
       <button type="button" class="bf-btn bf-btn--secondary bf-btn--block" style="height: 56px; border: 1.5px dashed var(--line);" @click="fileInput.click()">
         <Icon name="camera" />{{ receiptPreview ? t('receiptChange') : t('receipt') }}

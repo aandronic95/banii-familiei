@@ -5,10 +5,11 @@ on:
     - cron: '0 6 * * *'    # zilnic, ~09:00 la Chișinău: scadențe, bugete, plăți recurente, curs BNM
     - cron: '0 16 * * 0'   # duminică seara: rezumatul săptămânii + backup Excel (cui l-a cerut)
     - cron: '30 6 1 * *'   # pe 1 a lunii: raportul PDF pentru luna trecută
+    - cron: '0 18 * * *'   # seara, ~21:00 la Chișinău: rezumatul zilei
   workflow_dispatch:
     inputs:
       task:
-        description: 'daily, weekly sau monthly'
+        description: 'daily, weekly, monthly sau evening'
         default: daily
 
 jobs:
@@ -25,6 +26,7 @@ jobs:
             case "${{ github.event.schedule }}" in
               "0 16 * * 0") TASK=weekly ;;
               "30 6 1 * *") TASK=monthly ;;
+              "0 18 * * *") TASK=evening ;;
               *) TASK=daily ;;
             esac
           fi
@@ -36,6 +38,8 @@ jobs:
             monthly)
               curl -sf -X POST "$BASE/notify?task=monthly" -H "x-cron-secret: ${SECRET}"; echo
               curl -sf -X POST "$BASE/docs?type=report&all=1" -H "x-cron-secret: ${SECRET}"; echo ;;
+            evening)
+              curl -sf -X POST "$BASE/notify?task=evening" -H "x-cron-secret: ${SECRET}"; echo ;;
             *)
               curl -sf -X POST "$BASE/notify?task=daily" -H "x-cron-secret: ${SECRET}"; echo ;;
           esac

@@ -74,7 +74,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "method" }, 405);
   const url = new URL(req.url);
-  const type = url.searchParams.get("type") === "export" ? "export" : "report";
+  const qt = url.searchParams.get("type");
+  const type = qt === "export" ? "export" : qt === "filtered" ? "filtered" : "report";
 
   // Programat: toată lumea abonată
   if (url.searchParams.get("all") === "1") {
@@ -113,6 +114,15 @@ Deno.serve(async (req) => {
       const month = typeof body.month === "string" && /^\d{4}-\d{2}$/.test(body.month) ? body.month : todayLocal().slice(0, 7);
       const r = await buildReport(F, month, lang);
       return json({ ok: await sendFile(me.telegram_id, r.bytes, r.name, "application/pdf", L[lang].caption(r.monthLabel)) });
+    }
+    if (type === "filtered") {
+      // Doar tranzacțiile alese în aplicație (căutare / filtre); ID-urile se verifică față de familia ta
+      const ids = new Set((Array.isArray(body.ids) ? body.ids : []).filter((x: unknown) => typeof x === "string").slice(0, 20000));
+      const txs = F.transactions.filter((t: any) => ids.has(t.id));
+      if (!txs.length) return json({ error: "empty" }, 400);
+      const r = buildExport({ ...F, transactions: txs }, lang, { onlyTx: true });
+      const cap = (lang === "ru" ? `🔎 Отобранные операции: ${txs.length}` : `🔎 Tranzacțiile filtrate: ${txs.length}`) + (typeof body.label === "string" ? `\n${body.label.slice(0, 200)}` : "");
+      return json({ ok: await sendFile(me.telegram_id, r.bytes, r.name, XLSX_MIME, cap) });
     }
     const r = buildExport(F, lang);
     return json({ ok: await sendFile(me.telegram_id, r.bytes, r.name, XLSX_MIME, L[lang].exportCap) });

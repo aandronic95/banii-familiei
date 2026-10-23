@@ -177,7 +177,7 @@ export async function buildReport(F: any, month: string, lang: "ro" | "ru") {
 }
 
 // ───────── Excel ─────────
-export function buildExport(F: any, lang: "ro" | "ru") {
+export function buildExport(F: any, lang: "ro" | "ru", opts: { onlyTx?: boolean } = {}) {
   const ro = lang !== "ru";
   const cat = (id: string) => (F.catById[id] ? (ro ? F.catById[id].name_ro : F.catById[id].name_ru) : "");
   const mem = (id: string) => F.memById[id]?.name ?? "";
@@ -197,7 +197,13 @@ export function buildExport(F: any, lang: "ro" | "ru") {
     [ro ? "Moneda" : "Валюта"]: F.txCur(t), [ro ? "Cont" : "Счёт"]: acc(t.account_id), [ro ? "În contul" : "На счёт"]: acc(t.to_account_id),
     [ro ? "Categorie" : "Категория"]: cat(t.category_id), [ro ? "Cine" : "Кто"]: mem(t.member_id), [ro ? "Magazin / descriere" : "Магазин / описание"]: t.merchant ?? "",
     [ro ? "Notă" : "Заметка"]: t.note ?? "", [ro ? "Litri" : "Литры"]: t.fuel_liters ?? "", [ro ? "Km" : "Км"]: t.odometer ?? "",
+    [ro ? "Etichete" : "Метки"]: (t.tags ?? []).map((x: string) => "#" + x).join(" "),
+    ID: t.id, // pentru restaurare: rândurile cu același ID nu se dublează
   })));
+  if (opts.onlyTx) {
+    const out = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    return { bytes: new Uint8Array(out), name: `tranzactii-${todayLocal()}.xlsx` };
+  }
   add(ro ? "Conturi" : "Счета", F.accounts.map((a: any) => ({ [ro ? "Nume" : "Название"]: a.name, [ro ? "Tip" : "Тип"]: a.type, [ro ? "Moneda" : "Валюта"]: a.currency, [ro ? "Sold" : "Остаток"]: Math.round((F.balances[a.id] ?? 0) * 100) / 100, [ro ? "Al cui" : "Чей"]: mem(a.member_id), [ro ? "Banca" : "Банк"]: a.bank ?? "", [ro ? "Arhivat" : "Архив"]: a.archived ? "da" : "" })));
   add(ro ? "Credite" : "Кредиты", F.loans.map((l: any) => ({ [ro ? "Nume" : "Название"]: l.name, [ro ? "Banca" : "Банк"]: l.bank ?? "", [ro ? "Suma" : "Сумма"]: Number(l.principal), [ro ? "Dobândă %" : "Ставка %"]: Number(l.annual_rate), [ro ? "Luni" : "Мес."]: l.term_months, [ro ? "Prima rată" : "Первый платёж"]: l.first_due, [ro ? "Rămas" : "Остаток"]: Math.round(F.loanLeft(l)), [ro ? "Moneda" : "Валюта"]: l.currency })));
   add(ro ? "Investiții" : "Инвестиции", F.investments.map((i: any) => ({ [ro ? "Platforma" : "Платформа"]: i.platform ?? "", [ro ? "Denumire" : "Название"]: i.name, [ro ? "Cod" : "Код"]: i.code ?? "", [ro ? "Investit" : "Вложено"]: Number(i.amount), [ro ? "Moneda" : "Валюта"]: i.currency, [ro ? "Dobândă %" : "Ставка %"]: i.rate ?? "", [ro ? "Început" : "Начало"]: i.start_date, [ro ? "Scadență" : "Погашение"]: i.maturity_date ?? "", [ro ? "Valoare actuală" : "Текущая стоимость"]: i.current_value ?? "", [ro ? "Statut" : "Статус"]: i.status })));

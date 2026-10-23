@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, save, setRate, refreshRates, debtMdl, investMdl, debtsSummary } from '../store.js'
+import { S, me, save, savePrefs, setRate, refreshRates, debtMdl, investMdl, debtsSummary } from '../store.js'
 import { t, lang, setLang } from '../lib/i18n.js'
 import { parseAmount, money0, daysUntil, todayISO, dateLong } from '../lib/format.js'
 import { haptic, homeShortcutSupported, homeShortcutStatus, addHomeShortcut } from '../lib/telegram.js'
@@ -18,6 +18,19 @@ const router = useRouter()
 const homeSt = ref(homeShortcutSupported() ? 'unknown' : 'unsupported')
 homeShortcutStatus().then((st) => { homeSt.value = st })
 function addHome() { if (!addHomeShortcut(() => { homeSt.value = 'added'; toast(t('homeAdded')) })) homeSt.value = 'unsupported' }
+// Alerte de curs valutar: botul anunță când EUR/USD trece de un prag
+const fxRules = computed(() => (Array.isArray(me.value?.prefs?.fx) ? me.value.prefs.fx : []))
+const fxNew = reactive({ cur: 'EUR', op: '<', v: '' })
+async function addFx() {
+  const v = parseAmount(fxNew.v)
+  if (!(v > 0)) return
+  await savePrefs({ fx: [...fxRules.value, { cur: fxNew.cur, op: fxNew.op, v }].slice(0, 10) })
+  fxNew.v = ''
+  const now = S.rates[fxNew.cur]
+  toast(now && (fxNew.op === '<' ? now < v : now > v) ? t('fxAlreadyTrue', fmtRate(now)) : t('fxSaved'))
+}
+async function delFx(i) { await savePrefs({ fx: fxRules.value.filter((_, k) => k !== i) }) }
+
 // Pragul pentru „cheltuială mare” (MDL); 0 = oprit
 const bigLimit = ref(me.value?.notify?.big ? String(me.value.notify.big) : '')
 async function saveBig() {
@@ -27,7 +40,7 @@ async function saveBig() {
   await saveNotify()
   toast(v ? t('bigOn', money0(v)) : t('bigOff'))
 }
-const notify = reactive({ loans: true, budget: true, weekly: true, car: true, invest: true, recurring: true, debts: true, monthly: true, backup: false, ...(me.value?.notify || {}) })
+const notify = reactive({ evening: true, loans: true, budget: true, weekly: true, car: true, invest: true, recurring: true, debts: true, monthly: true, backup: false, ...(me.value?.notify || {}) })
 
 // Blocare: cod de rezervă obligatoriu + Face ID, dacă telefonul îl are
 const lockOn = ref(isLockEnabled())
@@ -140,6 +153,7 @@ const links = computed(() => [
   { to: '/import', icon: 'list', title: t('importTitle'), sub: t('importSub') },
   { to: '/family', icon: 'users', title: t('family'), sub: S.members.map((m) => m.name).join(', ') },
   { to: '/history', icon: 'clock', title: t('histTitle'), sub: t('histSub') },
+  { to: '/restore', icon: 'upload', title: t('rsTitle'), sub: t('rsSub') },
 ])
 
 async function saveNotify() {
@@ -155,7 +169,7 @@ async function saveRate(c) {
   const v = parseAmount(rates[c])
   if (v > 0) { await setRate(c, v); toast(t('saved')) }
 }
-const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub'], ['invest', 'nInvest', 'nInvestSub'], ['recurring', 'nRecurring', 'nRecurringSub'], ['debts', 'nDebts', 'nDebtsSub'], ['monthly', 'nMonthly', 'nMonthlySub'], ['backup', 'nBackup', 'nBackupSub']]
+const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub'], ['invest', 'nInvest', 'nInvestSub'], ['recurring', 'nRecurring', 'nRecurringSub'], ['debts', 'nDebts', 'nDebtsSub'], ['monthly', 'nMonthly', 'nMonthlySub'], ['backup', 'nBackup', 'nBackupSub'], ['evening', 'nEvening', 'nEveningSub']]
 </script>
 
 <template>
@@ -215,6 +229,20 @@ const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetS
       <div style="display: flex; gap: 8px;">
         <input v-model="rateDate" type="date" class="inp" :max="todayISO()" :aria-label="t('rateDate')" style="flex: 1;">
         <button type="button" class="bf-btn bf-btn--secondary" :disabled="rateBusy" @click="loadBnm">{{ t('bnmLoad') }}</button>
+      </div>
+      <div class="bf-card stack" style="padding: 12px 16px;">
+        <div style="font-weight: 600;">{{ t('fxTitle') }}</div>
+        <div v-for="(r, i) in fxRules" :key="i" class="kv">
+          <span>1 {{ r.cur }} {{ r.op === '<' ? t('fxBelow') : t('fxAbove') }} <b>{{ fmtRate(r.v) }}</b> MDL</span>
+          <button type="button" class="link" style="padding: 0;" @click="delFx(i)">{{ t('delete') }}</button>
+        </div>
+        <div style="display: grid; grid-template-columns: 76px 1fr 1fr auto; gap: 6px;">
+          <select v-model="fxNew.cur" class="inp" :aria-label="t('fxCur')" style="padding: 0 8px;"><option>EUR</option><option>USD</option></select>
+          <select v-model="fxNew.op" class="inp" :aria-label="t('fxDir')" style="padding: 0 8px;"><option value="<">{{ t('fxBelow') }}</option><option value=">">{{ t('fxAbove') }}</option></select>
+          <input v-model="fxNew.v" class="inp" inputmode="decimal" :placeholder="S.rates[fxNew.cur] ? fmtRate(S.rates[fxNew.cur]) : '19,50'" :aria-label="t('fxValue')">
+          <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 48px; padding: 0 14px;" :disabled="!(parseAmount(fxNew.v) > 0)" @click="addFx">{{ t('add') }}</button>
+        </div>
+        <p class="hint" style="margin: 0;">{{ t('fxHint') }}</p>
       </div>
       <div v-if="pastRates" class="bf-card stack" style="padding: 12px 16px;">
         <div class="cap">{{ t('rateFrom', dateLong(pastRates.date)) }}</div>

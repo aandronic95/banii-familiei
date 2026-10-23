@@ -78,3 +78,24 @@ export function addHomeShortcut(onAdded) {
     return true
   } catch (_) { return false }
 }
+
+// Scanerul QR al Telegram (Bot API 6.4+). Întoarce textul citit sau null dacă a fost închis.
+export const qrSupported = () => !!(tg?.isVersionAtLeast?.('6.4') && tg.showScanQrPopup)
+export function scanQr(hint, accept = () => true) {
+  return new Promise((resolve) => {
+    if (!qrSupported()) return resolve(null)
+    let done = false
+    const onClose = () => { tg.offEvent?.('scanQrPopupClosed', onClose); if (!done) resolve(null) }
+    tg.onEvent?.('scanQrPopupClosed', onClose)
+    try {
+      tg.showScanQrPopup({ text: hint }, (text) => {
+        if (!accept(text)) return false // continuă să caute un cod potrivit
+        done = true
+        tg.offEvent?.('scanQrPopupClosed', onClose)
+        resolve(text)
+        return true
+      })
+    } catch (_) { resolve(null) }
+  })
+}
+export function openLink(url) { try { tg?.openLink ? tg.openLink(url) : window.open(url, '_blank', 'noopener') } catch (_) {} }

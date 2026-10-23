@@ -5,6 +5,7 @@ import { S, periodSums, categoryById, memberById, totalMdl, debtMdl, investMdl, 
 import { t, catName } from '../lib/i18n.js'
 import { money0, todayISO, monthShort } from '../lib/format.js'
 import DailySpend from '../components/DailySpend.vue'
+import SpendCalendar from '../components/SpendCalendar.vue'
 import NetWorth from '../components/NetWorth.vue'
 import Subscriptions from '../components/Subscriptions.vue'
 import Projects from '../components/Projects.vue'
@@ -71,6 +72,8 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
     </div>
 
     <DailySpend />
+
+    <SpendCalendar />
 
     <div v-if="cats.length" class="bf-card stack-lg">
       <div class="sec-head"><h2 class="h-sec">{{ t('byCategory') }}</h2><span class="cap">{{ money0(sums.exp) }} MDL</span></div>

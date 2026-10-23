@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, isOwner, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
+import { S, me, isOwner, savePrefs, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
@@ -11,6 +11,8 @@ import { privacy, togglePrivacy } from '../lib/privacy.js'
 import { haptic } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
 import AnimatedNumber from '../components/AnimatedNumber.vue'
+import ForecastCard from '../components/ForecastCard.vue'
+import EmergencyCard from '../components/EmergencyCard.vue'
 import { nowMs } from '../lib/live.js'
 
 const router = useRouter()
@@ -61,6 +63,27 @@ async function useTemplate(tp) {
     toast(t('tplAdded', tp.name, money(tp.amount) + ' ' + cur), { action: t('undo'), fn: () => remove('transactions', x.id, { silent: true }) })
   } catch (e) { console.error(e); toast(t('error', e)) } finally { tplBusy.value = '' }
 }
+
+// Ecranul Acasă personalizat (ordinea și ce se vede), salvat pe persoană
+const SECTIONS = ['guide', 'quick', 'templates', 'salary', 'alerts', 'forecast', 'budgets', 'emergency', 'recent']
+const customize = ref(false)
+const layout = computed(() => {
+  const p = me.value?.prefs?.home || {}
+  const order = [...(p.order || []).filter((k) => SECTIONS.includes(k)), ...SECTIONS.filter((k) => !(p.order || []).includes(k))]
+  const hidden = (p.hidden || []).filter((k) => SECTIONS.includes(k))
+  return { order, hidden, shown: order.filter((k) => !hidden.includes(k)) }
+})
+const saveLayout = (order, hidden) => savePrefs({ home: { order, hidden } }).catch((e) => toast(t('error', e)))
+function moveSection(i, d) {
+  const o = [...layout.value.order]
+  ;[o[i], o[i + d]] = [o[i + d], o[i]]
+  saveLayout(o, layout.value.hidden)
+}
+function toggleSection(k) {
+  const h = layout.value.hidden.includes(k) ? layout.value.hidden.filter((x) => x !== k) : [...layout.value.hidden, k]
+  saveLayout(layout.value.order, h)
+}
+function resetLayout() { saveLayout(SECTIONS, []) }
 
 // Avertizări: rate în următoarele 5 zile și termene la mașină în 14 zile
 const alerts = computed(() => {
@@ -118,67 +141,78 @@ const alerts = computed(() => {
       </div>
     </button>
 
-    <section v-if="showGuide" class="bf-card stack" aria-labelledby="guide-h">
-      <div class="sec-head">
-        <h2 id="guide-h" class="h-sec">{{ t('gTitle') }}</h2>
-        <span class="cap">{{ t('gProgress', guide.done, guide.steps.length) }}</span>
-      </div>
-      <div class="bf-bar" style="margin-top: 0;"><i :style="{ width: (guide.done / guide.steps.length) * 100 + '%' }"></i></div>
-      <div class="guide">
-        <button v-for="st in guide.steps" :key="st.key" type="button" class="guide__step" :class="{ 'guide__step--done': st.done }" @click="router.push(st.to)">
-          <span class="guide__mark" aria-hidden="true"><Icon v-if="st.done" name="tick" :size="14" /></span>
-          <span class="guide__title">{{ st.title }}</span>
-          <span v-if="!st.done" class="chev" aria-hidden="true">›</span>
-        </button>
-      </div>
-      <button type="button" class="link" style="align-self: flex-start; padding: 0;" @click="hideGuide">{{ t('gHide') }}</button>
-    </section>
-
-    <section class="stack" :aria-label="t('quickAdd')">
-      <div class="quick">
-        <button v-for="c in quick" :key="c.id" type="button" class="quick__btn" @click="router.push({ path: '/tx/new', query: { category: c.id } })">
-          <span class="bf-row__icon"><Icon :name="c.icon" /></span>
-          <span class="quick__label">{{ catName(c) }}</span>
-        </button>
-      </div>
-    </section>
-
-    <section v-if="templates.length" class="stack" :aria-label="t('tplTitle')">
-      <div class="sec-head"><h2 class="h-sec" style="font-size: 15px;">{{ t('tplTitle') }}</h2><button class="link" @click="router.push('/templates')">{{ t('edit') }}</button></div>
-      <div class="tpl-row">
-        <button v-for="tp in templates" :key="tp.id" type="button" class="tpl" :disabled="tplBusy === tp.id" @click="useTemplate(tp)">
-          <span class="bf-row__icon"><Icon :name="categoryById(tp.category_id)?.icon || 'bolt'" :size="16" /></span>
-          {{ tp.name }} <small>{{ money0(tp.amount) }}</small>
-        </button>
-      </div>
-    </section>
-
-    <button v-if="nextSalary" type="button" class="bf-banner" style="border: 0; text-align: left; cursor: pointer; background: var(--surface); box-shadow: var(--shadow-card);" @click="router.push('/calendar')">
-      <Icon name="clock" />
-      <div style="flex: 1;"><b>{{ t('untilSalary', t('inDays', Math.max(0, daysUntil(nextSalary.next_date)))) }}</b> · {{ t('calendarTitle').toLowerCase() }}</div>
-      <span class="chev" aria-hidden="true">›</span>
-    </button>
-
-    <div v-if="alerts.length" class="stack">
-      <button v-for="a in alerts" :key="a.key" type="button" class="bf-banner" :class="{ 'bf-banner--danger': a.danger }" style="border: 0; text-align: left; cursor: pointer;" @click="router.push(a.to)">
-        <Icon name="alert" />
-        <div><b>{{ a.text }}</b> · {{ a.sub }}</div>
+    <template v-for="key in layout.shown" :key="key">
+      <section v-if="key === 'guide' && (showGuide)" class="bf-card stack" aria-labelledby="guide-h">
+        <div class="sec-head">
+          <h2 id="guide-h" class="h-sec">{{ t('gTitle') }}</h2>
+          <span class="cap">{{ t('gProgress', guide.done, guide.steps.length) }}</span>
+        </div>
+        <div class="bf-bar" style="margin-top: 0;"><i :style="{ width: (guide.done / guide.steps.length) * 100 + '%' }"></i></div>
+        <div class="guide">
+          <button v-for="st in guide.steps" :key="st.key" type="button" class="guide__step" :class="{ 'guide__step--done': st.done }" @click="router.push(st.to)">
+            <span class="guide__mark" aria-hidden="true"><Icon v-if="st.done" name="tick" :size="14" /></span>
+            <span class="guide__title">{{ st.title }}</span>
+            <span v-if="!st.done" class="chev" aria-hidden="true">›</span>
+          </button>
+        </div>
+        <button type="button" class="link" style="align-self: flex-start; padding: 0;" @click="hideGuide">{{ t('gHide') }}</button>
+      </section>
+      <section v-if="key === 'quick'" class="stack" :aria-label="t('quickAdd')">
+        <div class="quick">
+          <button v-for="c in quick" :key="c.id" type="button" class="quick__btn" @click="router.push({ path: '/tx/new', query: { category: c.id } })">
+            <span class="bf-row__icon"><Icon :name="c.icon" /></span>
+            <span class="quick__label">{{ catName(c) }}</span>
+          </button>
+        </div>
+      </section>
+      <section v-if="key === 'templates' && (templates.length)" class="stack" :aria-label="t('tplTitle')">
+        <div class="sec-head"><h2 class="h-sec" style="font-size: 15px;">{{ t('tplTitle') }}</h2><button class="link" @click="router.push('/templates')">{{ t('edit') }}</button></div>
+        <div class="tpl-row">
+          <button v-for="tp in templates" :key="tp.id" type="button" class="tpl" :disabled="tplBusy === tp.id" @click="useTemplate(tp)">
+            <span class="bf-row__icon"><Icon :name="categoryById(tp.category_id)?.icon || 'bolt'" :size="16" /></span>
+            {{ tp.name }} <small>{{ money0(tp.amount) }}</small>
+          </button>
+        </div>
+      </section>
+      <button v-if="key === 'salary' && (nextSalary)" type="button" class="bf-banner" style="border: 0; text-align: left; cursor: pointer; background: var(--surface); box-shadow: var(--shadow-card);" @click="router.push('/calendar')">
+        <Icon name="clock" />
+        <div style="flex: 1;"><b>{{ t('untilSalary', t('inDays', Math.max(0, daysUntil(nextSalary.next_date)))) }}</b> · {{ t('calendarTitle').toLowerCase() }}</div>
+        <span class="chev" aria-hidden="true">›</span>
       </button>
-    </div>
-
-    <section v-if="budgets.length" class="stack">
-      <div class="sec-head"><h2 class="h-sec">{{ t('monthBudget') }}</h2><button class="link" @click="router.push('/budgets')">{{ t('all') }}</button></div>
-      <div class="bf-card stack-lg">
-        <BudgetBar v-for="r in budgets" :key="r.cat.id" :row="r" :show-note="r.state !== 'ok'" />
+      <div v-if="key === 'alerts' && (alerts.length)" class="stack">
+        <button v-for="a in alerts" :key="a.key" type="button" class="bf-banner" :class="{ 'bf-banner--danger': a.danger }" style="border: 0; text-align: left; cursor: pointer;" @click="router.push(a.to)">
+          <Icon name="alert" />
+          <div><b>{{ a.text }}</b> · {{ a.sub }}</div>
+        </button>
       </div>
+      <section v-if="key === 'budgets' && (budgets.length)" class="stack">
+        <div class="sec-head"><h2 class="h-sec">{{ t('monthBudget') }}</h2><button class="link" @click="router.push('/budgets')">{{ t('all') }}</button></div>
+        <div class="bf-card stack-lg">
+          <BudgetBar v-for="r in budgets" :key="r.cat.id" :row="r" :show-note="r.state !== 'ok'" />
+        </div>
+      </section>
+      <section v-if="key === 'recent'" class="stack">
+        <div class="sec-head"><h2 class="h-sec">{{ t('recentTx') }}</h2><button class="link" @click="router.push('/transactions')">{{ t('all') }}</button></div>
+        <div v-if="recent.length" class="bf-list">
+          <TxRow v-for="x in recent" :key="x.id" :tx="x" />
+        </div>
+        <div v-else class="bf-card empty">{{ t('noTx') }}</div>
+      </section>
+      <ForecastCard v-if="key === 'forecast'" />
+      <EmergencyCard v-if="key === 'emergency'" />
+    </template>
+
+    <button v-if="!customize" type="button" class="link" style="align-self: center;" @click="customize = true"><Icon name="filter" :size="16" /> {{ t('homeCustomize') }}</button>
+    <section v-else class="bf-card stack" aria-labelledby="cust-h">
+      <div class="sec-head"><h2 id="cust-h" class="h-sec">{{ t('homeCustomize') }}</h2><button type="button" class="link" @click="customize = false">{{ t('done') }}</button></div>
+      <div v-for="(k, i) in layout.order" :key="k" class="kv" style="gap: 8px;">
+        <label :for="'hs-' + k" style="flex: 1; cursor: pointer;">{{ t('hs_' + k) }}</label>
+        <button type="button" class="amt-op" style="width: 34px; height: 34px;" :disabled="i === 0" :aria-label="t('moveUp')" @click="moveSection(i, -1)">↑</button>
+        <button type="button" class="amt-op" style="width: 34px; height: 34px;" :disabled="i === layout.order.length - 1" :aria-label="t('moveDown')" @click="moveSection(i, 1)">↓</button>
+        <input :id="'hs-' + k" type="checkbox" class="sw" :checked="!layout.hidden.includes(k)" @change="toggleSection(k)">
+      </div>
+      <button type="button" class="link" style="align-self: flex-start; padding: 0;" @click="resetLayout">{{ t('homeReset') }}</button>
     </section>
 
-    <section class="stack">
-      <div class="sec-head"><h2 class="h-sec">{{ t('recentTx') }}</h2><button class="link" @click="router.push('/transactions')">{{ t('all') }}</button></div>
-      <div v-if="recent.length" class="bf-list">
-        <TxRow v-for="x in recent" :key="x.id" :tx="x" />
-      </div>
-      <div v-else class="bf-card empty">{{ t('noTx') }}</div>
-    </section>
   </main>
 </template>

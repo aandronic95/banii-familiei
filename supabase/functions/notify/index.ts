@@ -38,6 +38,10 @@ const T = {
     mHead: (m: string) => `🗓 Concluzia lunii ${m}`, mInc: "Venituri", mExp: "Cheltuieli", mSaved: "Economisit", mRate: (p: number) => `${p}% din venituri`,
     mAvg: "Pe zi", mTop: "Unde s-au dus banii:", mUp: (c: string, p: number) => `📈 Cel mai mult a crescut: ${c} (+${p}%)`, mDown: (c: string, p: number) => `📉 Ați redus: ${c} (−${p}%)`,
     mVs: "față de luna trecută", mNone: "Nicio tranzacție luna trecută.",
+    fx: (cur: string, op: string, lim: string, now: string, prev: string) => `💱 ${cur} a trecut ${op === "<" ? "sub" : "peste"} ${lim}: azi 1 ${cur} = ${now} MDL (ieri ${prev}).`,
+    eHead: "🌙 Ziua de azi", eSpent: (a: string, n: number) => `Cheltuit: −${a} MDL (${n} ${n === 1 ? "plată" : "plăți"})`, eNone: "Azi nicio cheltuială 👍", eInc: (a: string) => `Venit: +${a} MDL`,
+    eBudget: (left: string, total: string) => `Bugetul lunii: rămas ${left} din ${total} MDL`, eOver: (a: string) => `Bugetul lunii e depășit cu ${a} MDL`,
+    ePerDay: (a: string, d: number) => `Poți cheltui ~${a} MDL pe zi în următoarele ${d} ${d === 1 ? "zi" : "zile"}`, eMonth: (a: string) => `Luna aceasta: −${a} MDL`,
   },
   ru: {
     open: "Открыть",
@@ -56,6 +60,10 @@ const T = {
     mHead: (m: string) => `🗓 Итоги месяца: ${m}`, mInc: "Доходы", mExp: "Расходы", mSaved: "Сэкономлено", mRate: (p: number) => `${p}% от доходов`,
     mAvg: "В день", mTop: "Куда ушли деньги:", mUp: (c: string, p: number) => `📈 Больше всего выросло: ${c} (+${p}%)`, mDown: (c: string, p: number) => `📉 Сократили: ${c} (−${p}%)`,
     mVs: "к прошлому месяцу", mNone: "За прошлый месяц операций нет.",
+    fx: (cur: string, op: string, lim: string, now: string, prev: string) => `💱 ${cur} ${op === "<" ? "опустился ниже" : "поднялся выше"} ${lim}: сегодня 1 ${cur} = ${now} MDL (вчера ${prev}).`,
+    eHead: "🌙 Итоги дня", eSpent: (a: string, n: number) => `Потрачено: −${a} MDL (${n} опер.)`, eNone: "Сегодня без расходов 👍", eInc: (a: string) => `Доход: +${a} MDL`,
+    eBudget: (left: string, total: string) => `Бюджет месяца: осталось ${left} из ${total} MDL`, eOver: (a: string) => `Бюджет месяца превышен на ${a} MDL`,
+    ePerDay: (a: string, d: number) => `Можно тратить ~${a} MDL в день ещё ${d} дн.`, eMonth: (a: string) => `За месяц: −${a} MDL`,
   },
 };
 
@@ -233,6 +241,80 @@ async function weekly(today: string) {
   }
 }
 
+// Alertă de curs: când EUR/USD trece de pragul ales (members.prefs.fx = [{ cur, op: "<" | ">", v }])
+const rate4 = (n: number) => n.toFixed(4).replace(".", ",");
+async function fxAlerts(today: string) {
+  const prevOf: Record<string, number> = {}, nowOf: Record<string, number> = {};
+  for (const cur of ["EUR", "USD"]) {
+    const { data } = await db.from("rates").select("date, rate").eq("currency", cur).lte("date", today).order("date", { ascending: false }).limit(2);
+    if (data?.[0]?.date === today && data[1]) { nowOf[cur] = Number(data[0].rate); prevOf[cur] = Number(data[1].rate); }
+  }
+  if (!Object.keys(nowOf).length) return;
+  const { data: mem } = await db.from("members").select("id, telegram_id, lang, prefs").in("role", ["owner", "editor"]).not("telegram_id", "is", null);
+  for (const m of mem ?? []) {
+    const rules = Array.isArray(m.prefs?.fx) ? m.prefs.fx.slice(0, 10) : [];
+    for (const [i, r] of rules.entries()) {
+      const now = nowOf[r.cur], prev = prevOf[r.cur], v = Number(r.v);
+      if (!now || !prev || !(v > 0)) continue;
+      const crossed = r.op === "<" ? prev >= v && now < v : prev <= v && now > v;
+      if (!crossed || !(await once(`fx:${m.id}:${i}:${r.cur}${r.op}${v}:${today}`))) continue;
+      const lg = m.lang === "ru" ? "ru" : "ro";
+      await tg(BOT_TOKEN, "sendMessage", {
+        chat_id: m.telegram_id, text: T[lg].fx(r.cur, r.op, rate4(v), rate4(now), rate4(prev)),
+        reply_markup: { inline_keyboard: [[{ text: T[lg].open, web_app: { url: APP_URL } }]] },
+      });
+    }
+  }
+}
+
+// Seara: cât s-a cheltuit azi și cât mai rămâne din bugetul lunii
+async function evening(today: string) {
+  const rates = await latestRates();
+  const toMdl = (a: number, cur: string) => a * (rates[cur] ?? 1);
+  const month = today.slice(0, 7);
+  const [y, mo] = today.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const daysLeft = lastDay - Number(today.slice(8, 10));
+  const { data: families } = await db.from("families").select("id");
+  for (const f of families ?? []) {
+    if (!(await once(`evening:${f.id}:${today}`))) continue;
+    const { data: mem } = await db.from("members").select("telegram_id, lang, notify")
+      .eq("family_id", f.id).in("role", ["owner", "editor"]).not("telegram_id", "is", null);
+    const members = (mem ?? []) as Member[];
+    if (!members.length) continue;
+    const { data: txs } = await db.from("transactions").select("kind, amount, date, merchant, category_id, accounts!transactions_account_id_fkey(currency), categories(name_ro, name_ru, budget)")
+      .eq("family_id", f.id).gte("date", `${month}-01`).lte("date", today).in("kind", ["income", "expense"]);
+    const { data: cats } = await db.from("categories").select("id, budget").eq("family_id", f.id).eq("kind", "expense").eq("archived", false);
+    const budget = (cats ?? []).reduce((s, c) => s + (Number(c.budget) || 0), 0);
+    const budgeted = new Set((cats ?? []).filter((c) => Number(c.budget) > 0).map((c) => c.id));
+    let dayExp = 0, dayInc = 0, n = 0, monthExp = 0, monthBudgeted = 0;
+    const items: { v: number; ro: string; ru: string }[] = [];
+    // deno-lint-ignore no-explicit-any
+    for (const t of (txs ?? []) as any[]) {
+      const v = toMdl(Number(t.amount), t.accounts?.currency ?? "MDL");
+      if (t.kind === "expense") {
+        monthExp += v;
+        if (budgeted.has(t.category_id)) monthBudgeted += v;
+        if (t.date === today) { dayExp += v; n++; items.push({ v, ro: t.merchant || t.categories?.name_ro || "Altele", ru: t.merchant || t.categories?.name_ru || "Другое" }); }
+      } else if (t.date === today) dayInc += v;
+    }
+    items.sort((a, b) => b.v - a.v);
+    await send(members, "evening", (lg) => {
+      const L = T[lg];
+      const lines = [L.eHead, n ? L.eSpent(fmt(dayExp), n) : L.eNone];
+      if (n) lines.push(...items.slice(0, 3).map((x) => `• ${lg === "ru" ? x.ru : x.ro} ${fmt(x.v)}`));
+      if (dayInc) lines.push(L.eInc(fmt(dayInc)));
+      lines.push("");
+      if (budget > 0) {
+        const left = budget - monthBudgeted;
+        lines.push(left >= 0 ? L.eBudget(fmt(left), fmt(budget)) : L.eOver(fmt(-left)));
+        if (left > 0 && daysLeft > 0) lines.push(L.ePerDay(fmt(left / daysLeft), daysLeft));
+      } else lines.push(L.eMonth(fmt(monthExp)));
+      return lines.join("\n");
+    });
+  }
+}
+
 // Pe 1 ale lunii: concluzia lunii trecute (unde s-au dus banii, ce a crescut, cât ați economisit)
 const MONTHS = {
   ro: ["ianuarie", "februarie", "martie", "aprilie", "mai", "iunie", "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie"],
@@ -323,8 +405,10 @@ Deno.serve(async (req) => {
   const today = todayLocal();
   if (task === "weekly") await weekly(today);
   else if (task === "monthly") await monthly(today);
+  else if (task === "evening") await evening(today);
   else {
     await daily(today);
+    await fxAlerts(today).catch((e) => console.error("fx", e));
     // Istoricul modificărilor se păstrează un an
     await db.from("audit_log").delete().lt("at", new Date(Date.now() - 365 * 86400000).toISOString());
   }

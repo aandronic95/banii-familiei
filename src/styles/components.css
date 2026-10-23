@@ -97,3 +97,22 @@
 .wd > div { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .wd i { display: block; width: 100%; max-width: 26px; border-radius: 4px 4px 2px 2px; background: var(--expense); opacity: .75; }
 .wd i.top { opacity: 1; }
+
+/* Calendarul cheltuielilor */
+.hm { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.hm__wd { text-align: center; font: 600 11px/16px var(--font-sans); color: var(--ink-muted); }
+.hm__d { aspect-ratio: 1 / 1.05; border: 0; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; cursor: pointer; font: 600 13px/14px var(--font-sans); color: var(--ink); padding: 0; min-width: 0; }
+.hm__d small { font: 500 9px/10px var(--font-sans); opacity: .85; font-variant-numeric: tabular-nums; }
+.hm__d:disabled { cursor: default; }
+.hm__d--today { box-shadow: inset 0 0 0 2px var(--ink); }
+.hm__d--sel { outline: 2px solid var(--brand); outline-offset: 1px; }
+.hm--f { background: transparent; color: var(--ink-muted); opacity: .5; }
+.hm--0 { background: var(--brand-soft); }
+.hm--1 { background: color-mix(in srgb, var(--expense) 14%, var(--surface)); }
+.hm--2 { background: color-mix(in srgb, var(--expense) 30%, var(--surface)); }
+.hm--3 { background: color-mix(in srgb, var(--expense) 48%, var(--surface)); }
+.hm--4 { background: color-mix(in srgb, var(--expense) 68%, var(--surface)); color: #fff; }
+.hm--5 { background: var(--expense); color: #fff; }
+.hm__legend { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.hm__legend span { display: inline-flex; align-items: center; gap: 3px; }
+.hm__legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }

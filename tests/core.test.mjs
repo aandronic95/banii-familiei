@@ -276,3 +276,41 @@ test('abonamente: găsește plățile lunare cu sumă constantă, ignoră restul
   assert.equal(suggestBudget([310, 280, 0]), 200)
   assert.equal(suggestBudget([0, 0, 0]), 0)
 })
+
+test('cod QR de pe bonul fiscal (MEV)', async () => {
+  const { parseFiscalQr } = await import('../src/lib/fiscal.js')
+  const a = parseFiscalQr('https://mev.sfs.md/receipt-verifier/J403001576/116.73/31/2026-10-21')
+  assert.deepEqual([a.amount, a.date, a.code, a.number, a.ref], [116.73, '2026-10-21', 'J403001576', '31', 'J403001576/31/2026-10-21'])
+  assert.ok(a.url.startsWith('https://mev.sfs.md/'))
+  const b = parseFiscalQr('https://mev.sfs.md/receipt-verifier/J702003032/385,50/2405/21.10.2026')
+  assert.deepEqual([b.amount, b.date, b.code], [385.5, '2026-10-21', 'J702003032'])
+  const c = parseFiscalQr('https://mev.sfs.md/receipt-verifier/J702003032/150/12/2026-10-21')
+  assert.equal(c.amount, 150)
+  assert.equal(parseFiscalQr('salut'), null)
+  assert.equal(parseFiscalQr(''), null)
+})
+
+test('restaurare din backup: nu dublează, potrivește conturile și categoriile după nume', async () => {
+  const { planRestore } = await import('../src/lib/restore.js')
+  const ctx = {
+    accounts: [{ id: 'a1', name: 'MAIB Visa' }, { id: 'a2', name: 'Portofel' }],
+    categories: [{ id: 'c1', kind: 'expense', name_ro: 'Mâncare', name_ru: 'Продукты' }, { id: 'i1', kind: 'income', name_ro: 'Salariu', name_ru: 'Зарплата' }],
+    members: [{ id: 'm1', name: 'Andrian' }],
+    transactions: [{ id: '11111111-1111-4111-8111-111111111111', date: '2026-10-01', amount: 100, account_id: 'a1', merchant: 'Linella' }],
+  }
+  const rows = [
+    { Data: '2026-10-01', Tip: 'Cheltuială', Suma: -100, Cont: 'MAIB Visa', Categorie: 'Mâncare', 'Magazin / descriere': 'Linella', ID: '11111111-1111-4111-8111-111111111111' }, // există (ID)
+    { Data: '2026-10-01', Tip: 'Cheltuială', Suma: -100, Cont: 'MAIB Visa', 'Magazin / descriere': 'linella' }, // există (aceleași date)
+    { Data: '2026-10-02', Tip: 'Cheltuială', Suma: -45.5, Cont: 'Portofel', Categorie: 'Mâncare', Cine: 'Andrian', Etichete: '#vacanta', ID: '22222222-2222-4222-8222-222222222222' },
+    { Дата: '2026-10-05', Тип: 'Доход', Сумма: 14200, Счёт: 'maib visa', Категория: 'Зарплата' },
+    { Data: '2026-10-03', Tip: 'Transfer', Suma: -500, Cont: 'MAIB Visa', 'În contul': 'Portofel' },
+    { Data: '2026-10-04', Tip: 'Cheltuială', Suma: -10, Cont: 'Cont șters' },
+  ]
+  const p = planRestore(rows, ctx)
+  assert.equal(p.dup, 2)
+  assert.equal(p.insert.length, 3)
+  assert.deepEqual(p.insert[0], { kind: 'expense', date: '2026-10-02', amount: 45.5, account_id: 'a2', merchant: null, note: null, category_id: 'c1', member_id: 'm1', tags: ['vacanta'], id: '22222222-2222-4222-8222-222222222222' })
+  assert.equal(p.insert[1].kind, 'income'); assert.equal(p.insert[1].category_id, 'i1')
+  assert.equal(p.insert[2].to_account_id, 'a2')
+  assert.equal(p.skipped.length, 1); assert.equal(p.skipped[0].why, 'account')
+})

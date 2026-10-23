@@ -718,6 +718,88 @@ export function carCost(carId, months = 12) {
   }
 }
 
+// ───────────── Prognoza soldului și fondul de urgență ─────────────
+const addDaysISO = (iso, k) => new Date(Date.parse(iso) + k * 86400000).toISOString().slice(0, 10)
+
+// Cheltuielile de zi cu zi (fără rate și fără plăți recurente), media pe zi din ultimele 90 de zile
+export function everydaySpendPerDay() {
+  const today = todayISO()
+  const first = S.transactions.reduce((m, x) => (!m || x.date < m ? x.date : m), null)
+  if (!first) return 0
+  const from = [addDaysISO(today, -90), first].sort().at(-1)
+  const days = Math.max(14, Math.round((Date.parse(today) - Date.parse(from)) / 86400000) + 1)
+  const bank = new Set(S.categories.filter((c) => c.icon === 'bank').map((c) => c.id))
+  let sum = 0
+  for (const x of S.transactions) {
+    if (x.kind !== 'expense' || x.date < from || x.date > today) continue
+    if (x.recurring_id || x.loan_id || bank.has(x.category_id)) continue
+    sum += toMdl(x.amount, txCurrency(x))
+  }
+  return sum / days
+}
+
+// Ziua cu zi, cât ar fi pe carduri + cash: plăți programate (rate, recurente, datorii, scadențe) + cheltuiala medie zilnică
+export function forecast(days = 60, { everyday = true } = {}) {
+  const today = todayISO()
+  const end = addDaysISO(today, days)
+  const events = upcoming(addDaysISO(today, 1), end).filter((e) => e.amount)
+  const daily = everyday ? everydaySpendPerDay() : 0
+  let bal = liquidMdl.value
+  const points = [{ date: today, bal }]
+  let low = { date: today, bal }
+  const byDate = {}
+  for (const e of events) (byDate[e.date] ??= []).push(e)
+  for (let k = 1; k <= days; k++) {
+    const d = addDaysISO(today, k)
+    bal -= daily
+    for (const e of byDate[d] || []) bal += e.sign * toMdl(e.amount, e.currency)
+    points.push({ date: d, bal, events: byDate[d] || [] })
+    if (bal < low.bal) low = { date: d, bal }
+  }
+  const firstNeg = points.find((p) => p.bal < 0) || null
+  return { points, low, firstNeg, daily, start: points[0].bal, end: points.at(-1).bal, events }
+}
+
+// Câte luni de cheltuieli acoperă banii la îndemână (carduri, cash, depozite)
+export const emergency = computed(() => {
+  const target = Number(me.value?.prefs?.emergencyMonths) || 6
+  const have = activeAccounts.value.filter((a) => ['card', 'cash', 'deposit'].includes(a.type))
+    .reduce((s, a) => s + Math.max(0, toMdl(balances.value[a.id] ?? 0, a.currency)), 0)
+  // Media lunară din ultimele ~3 luni, dar doar din zilele în care aveai deja date (altfel o lună începută ar ieși prea mică)
+  const today = todayISO()
+  const first = S.transactions.reduce((mn, x) => (!mn || x.date < mn ? x.date : mn), null)
+  let monthly = 0, basis = 0
+  if (first) {
+    const from = [monthsBack(today, 3), first].sort().at(-1)
+    basis = Math.max(14, Math.round((Date.parse(today) - Date.parse(from)) / 86400000) + 1)
+    monthly = (periodSums(from, today).exp / basis) * 30.44
+  }
+  const months = monthly > 0 ? have / monthly : null
+  return { have, monthly, months, target, need: Math.max(0, target * monthly - have), pct: months === null ? 0 : Math.min(1, months / target), basis }
+})
+
+// Preferințele mele (ecranul Acasă, ținta fondului, alertele de curs) — salvate pe server, pe persoană
+export async function savePrefs(patch) {
+  if (!me.value) return
+  const prefs = { ...(me.value.prefs || {}), ...patch }
+  await save('members', { id: me.value.id, prefs })
+}
+
+// Inserare în bloc (restaurare din backup): câte 200 de rânduri, doar cu internet
+export async function bulkInsert(table, rows, onProgress) {
+  let done = 0
+  for (let i = 0; i < rows.length; i += 200) {
+    const chunk = rows.slice(i, i + 200).map((r) => ({ ...r, family_id: S.family.id }))
+    const { data, error } = await supabase.from(table).insert(chunk).select()
+    if (error) throw error
+    for (const r of data) putLocal(TABLES[table], r, false)
+    done += chunk.length
+    onProgress?.(done)
+  }
+  schedulePersist()
+  return done
+}
+
 export const txCurrency = (t) => accountById(t.account_id)?.currency || 'MDL'
 
 // Sume într-o perioadă (în MDL); transferurile nu intră în venituri/cheltuieli
