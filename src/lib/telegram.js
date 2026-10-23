@@ -60,3 +60,21 @@ export function shareLink(url, text) {
 }
 
 export const BOT_USERNAME = 'andronicfambot'
+
+// Iconiță pe ecranul telefonului (Telegram Bot API 8.0+)
+export const homeShortcutSupported = () => !!(tg?.isVersionAtLeast?.('8.0') && tg.addToHomeScreen)
+export function homeShortcutStatus() {
+  return new Promise((resolve) => {
+    if (!homeShortcutSupported() || !tg.checkHomeScreenStatus) return resolve('unsupported')
+    try { tg.checkHomeScreenStatus((st) => resolve(st || 'unknown')) } catch (_) { resolve('unknown') }
+  })
+}
+export function addHomeShortcut(onAdded) {
+  if (!homeShortcutSupported()) return false
+  try {
+    const h = () => { tg.offEvent?.('homeScreenAdded', h); onAdded?.() }
+    tg.onEvent?.('homeScreenAdded', h)
+    tg.addToHomeScreen()
+    return true
+  } catch (_) { return false }
+}

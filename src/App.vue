@@ -9,7 +9,8 @@ import PinPad from './components/PinPad.vue'
 import { t, lang } from './lib/i18n.js'
 import TabBar from './components/TabBar.vue'
 import { toast } from './components/Toast.js'
-import { toastText } from './components/Toast.js'
+import { toastText, toastAction, runToastAction } from './components/Toast.js'
+import { syncNow } from './store.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -134,10 +135,18 @@ watch(() => [route.fullPath, S.status], () => {
   </div>
 
   <template v-else>
+    <button v-if="S.offline || S.pending" type="button" class="netbar" @click="syncNow">
+      <span class="netbar__dot" :class="{ 'netbar__dot--off': S.offline }" aria-hidden="true"></span>
+      <span>{{ S.offline ? t('offlineBar', S.cachedAt ? new Date(S.cachedAt).toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'ro-RO', { hour: '2-digit', minute: '2-digit' }) : '') : t('syncing') }}</span>
+      <b v-if="S.pending">{{ t('pendingN', S.pending) }}</b>
+    </button>
     <router-view v-slot="{ Component }">
       <component :is="Component" :key="route.fullPath" />
     </router-view>
     <TabBar v-if="!route.meta.form" />
-    <div v-if="toastText" class="toast" role="status">{{ toastText }}</div>
+    <div v-if="toastText" class="toast" :class="{ 'toast--action': toastAction }" role="status">
+      <span>{{ toastText }}</span>
+      <button v-if="toastAction" type="button" class="toast__btn" @click="runToastAction">{{ toastAction.label }}</button>
+    </div>
   </template>
 </template>

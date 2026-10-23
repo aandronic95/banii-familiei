@@ -34,6 +34,7 @@ jobs:
               curl -sf -X POST "$BASE/notify?task=weekly" -H "x-cron-secret: ${SECRET}"; echo
               curl -sf -X POST "$BASE/docs?type=export&all=1" -H "x-cron-secret: ${SECRET}"; echo ;;
             monthly)
+              curl -sf -X POST "$BASE/notify?task=monthly" -H "x-cron-secret: ${SECRET}"; echo
               curl -sf -X POST "$BASE/docs?type=report&all=1" -H "x-cron-secret: ${SECRET}"; echo ;;
             *)
               curl -sf -X POST "$BASE/notify?task=daily" -H "x-cron-secret: ${SECRET}"; echo ;;

@@ -2,7 +2,10 @@ import { reactive, computed } from 'vue'
 import { supabase } from './lib/supabase.js'
 import { tg, inTelegram } from './lib/telegram.js'
 import { loanStatus, nextOccurrence } from './lib/loan.js'
-import { todayISO } from './lib/format.js'
+import { todayISO, uuid } from './lib/format.js'
+import { cacheGet, cacheSet, cacheDel } from './lib/cache.js'
+import { toast } from './components/Toast.js'
+import { t as tr } from './lib/i18n.js'
 import { accruedInterest, liveAccrued, perDay } from './lib/invest.js'
 
 export const S = reactive({
@@ -25,6 +28,9 @@ export const S = reactive({
   goals: [],
   rates: { MDL: 1 },
   rateDates: {},
+  offline: false,   // lucrăm din copia locală, fără server
+  cachedAt: null,   // când au fost luate datele din copia locală
+  pending: 0,       // modificări care așteaptă internetul
 })
 
 const TABLES = {
@@ -32,21 +38,100 @@ const TABLES = {
   loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments', recurring: 'recurring', debts: 'debts', goals: 'goals',
 }
 
+// ───────────── Copia locală și coada offline ─────────────
+const DATA_KEYS = ['family', 'members', 'accounts', 'categories', 'transactions', 'loans', 'loanPayments', 'cars', 'carEvents', 'investments', 'recurring', 'debts', 'goals']
+const snapKey = () => 'snap:' + S.tgId
+const queueKey = () => 'queue:' + S.tgId
+let queue = []
+let persistT = 0
+
+function schedulePersist() {
+  if (!S.tgId || !S.family) return
+  clearTimeout(persistT)
+  persistT = setTimeout(() => {
+    const data = Object.fromEntries(DATA_KEYS.map((k) => [k, S[k]]))
+    cacheSet(snapKey(), { userId: S.userId, at: Date.now(), data, rates: S.rates, rateDates: S.rateDates })
+  }, 1200)
+}
+function persistQueue() { S.pending = queue.length; cacheSet(queueKey(), queue) }
+async function forgetDevice() { await cacheDel(snapKey()); await cacheDel(queueKey()); queue = []; S.pending = 0 }
+
+// Modificările din coadă se aplică peste datele aduse de pe server, ca să nu dispară de pe ecran
+function applyQueueLocally() {
+  for (const it of queue) {
+    const key = TABLES[it.table]
+    if (it.op === 'delete') removeLocal(key, it.id, false)
+    else putLocal(key, { ...it.row, _pending: true }, false)
+  }
+}
+
+const isNetErr = (e) => describeError(e) === 'offline'
+
+// Trimite pe server ce s-a salvat fără internet, în ordine
+export async function flushQueue() {
+  const sentTx = []
+  while (queue.length) {
+    const it = queue[0]
+    let res
+    if (it.op === 'insert') res = await supabase.from(it.table).insert(it.row)
+    else if (it.op === 'update') res = await supabase.from(it.table).update(it.row).eq('id', it.row.id)
+    else res = await supabase.from(it.table).delete().eq('id', it.id)
+    const err = res.error
+    if (err && isNetErr(err)) throw err
+    if (err && !(it.op === 'insert' && err.code === '23505')) { // 23505 = era deja salvat
+      console.warn('nu s-a putut sincroniza', it, err)
+      toast(tr('syncFailed'))
+    } else if (it.table === 'transactions' && it.op === 'insert') sentTx.push(it.row)
+    queue.shift()
+    persistQueue()
+  }
+  if (sentTx.length) maybeAlert(sentTx)
+}
+
+let syncing = false
+export async function syncNow() {
+  if (syncing || !S.userId) return
+  syncing = true
+  try {
+    const { data } = await supabase.auth.getSession()
+    if (!data.session) { syncing = false; return start() }
+    await afterLogin()
+  } catch (e) {
+    if (!isNetErr(e)) console.warn('sincronizare', e)
+  } finally { syncing = false }
+}
+if (typeof window !== 'undefined') window.addEventListener('online', () => { if (S.offline || S.pending) syncNow() })
+
 // ───────────── Autentificare prin Telegram ─────────────
 export async function start() {
   S.status = 'loading'
   if (!inTelegram()) { S.status = 'not_telegram'; return }
   S.tgId = tg.initDataUnsafe?.user?.id ?? null
   const invite = new URLSearchParams(location.search).get('invite') || ''
+
+  // Deschidere instant: arătăm imediat datele salvate pe telefon, apoi le actualizăm de pe server
+  if (!invite && S.tgId) {
+    queue = (await cacheGet(queueKey())) || []
+    S.pending = queue.length
+    const snap = await cacheGet(snapKey())
+    if (snap?.data?.family) {
+      Object.assign(S, snap.data, { userId: snap.userId, cachedAt: snap.at })
+      Object.assign(S.rates, snap.rates || {}); Object.assign(S.rateDates, snap.rateDates || {})
+      applyQueueLocally()
+      S.status = 'ready'
+    }
+  }
+  const fromCache = S.status === 'ready'
+
   try {
-    // Deschidere rapidă: refolosim sesiunea salvată dacă e a aceluiași cont Telegram.
+    // Refolosim sesiunea salvată dacă e a aceluiași cont Telegram.
     // Dacă accesul a fost scos între timp, RLS nu mai dă date și trecem la login complet.
     if (!invite && (await resumeSession())) return
     const { data, error } = await supabase.functions.invoke('tg-auth', { body: { initData: tg.initData, invite } })
     if (error) {
       let body = {}
       try { body = await error.context.json() } catch (_) {}
-      if (body.error === 'not_allowed') { S.tgId = body.telegram_id ?? S.tgId; S.status = 'not_allowed'; return }
+      if (body.error === 'not_allowed') { await forgetDevice(); S.tgId = body.telegram_id ?? S.tgId; S.status = 'not_allowed'; return }
       if (body.error === 'invite_invalid') { S.status = 'invite_bad'; return }
       throw error
     }
@@ -57,42 +142,54 @@ export async function start() {
     await afterLogin()
   } catch (e) {
     console.error(e)
+    if (fromCache) { S.offline = true; return } // rămânem pe datele locale; reîncercăm când revine internetul
     S.errorText = describeError(e)
     S.status = 'error'
   }
 }
 
 async function resumeSession() {
+  let u
   try {
     const { data } = await supabase.auth.getSession()
-    const u = data.session?.user
-    if (!u || Number(u.user_metadata?.telegram_id) !== Number(S.tgId)) return false
-    S.userId = u.id
+    u = data.session?.user
+  } catch (_) { return false }
+  if (!u || Number(u.user_metadata?.telegram_id) !== Number(S.tgId)) return false
+  S.userId = u.id
+  try {
     await afterLogin()
     return true
-  } catch (_) {
+  } catch (e) {
+    if (isNetErr(e)) throw e // fără internet: nu stricăm sesiunea
     await supabase.auth.signOut({ scope: 'local' }).catch(() => {})
     return false
   }
 }
 
 async function afterLogin() {
+  await flushQueue()
   await loadAll()
+  applyQueueLocally()
   subscribe()
   S.status = 'ready'
+  S.offline = false
+  S.cachedAt = null
+  schedulePersist()
   if (S.rateDates.EUR !== todayISO() || S.rateDates.USD !== todayISO()) refreshRates().catch((e) => console.warn('curs BNM', e))
 }
 
 // Reîncarcă datele când aplicația revine în prim-plan (conexiunea live se poate pierde în fundal)
 let lastLoad = 0
 export async function refreshIfStale(maxAgeMs = 30000) {
-  if (S.status !== 'ready' || Date.now() - lastLoad < maxAgeMs) return
-  try { await loadAll(); subscribe() } catch (e) { console.warn('reîncărcare', e) }
+  if (S.status !== 'ready') return
+  if (S.offline || S.pending) return syncNow()
+  if (Date.now() - lastLoad < maxAgeMs) return
+  try { await loadAll(); applyQueueLocally(); subscribe(); schedulePersist() } catch (e) { console.warn('reîncărcare', e) }
 }
 
 export function describeError(e) {
   const msg = String(e?.message || e || '')
-  if (!navigator.onLine || /Failed to fetch|NetworkError|Load failed/i.test(msg)) return 'offline'
+  if (!navigator.onLine || /Failed to fetch|NetworkError|Load failed|Failed to send a request|FunctionsFetchError/i.test(msg)) return 'offline'
   return 'generic'
 }
 
@@ -146,33 +243,106 @@ function subscribe() {
   channel.subscribe()
 }
 
-function putLocal(key, row) {
+function putLocal(key, row, persist = true) {
   const arr = S[key]
   const i = arr.findIndex((x) => x.id === row.id)
-  if (i >= 0) arr.splice(i, 1, { ...arr[i], ...row })
-  else arr.push(row)
+  if (i >= 0) {
+    const merged = { ...arr[i], ...row }
+    if (!row._pending) delete merged._pending
+    arr.splice(i, 1, merged)
+  } else arr.push(row)
+  if (persist) schedulePersist()
 }
-function removeLocal(key, id) {
+function removeLocal(key, id, persist = true) {
   const i = S[key].findIndex((x) => x.id === id)
   if (i >= 0) S[key].splice(i, 1)
+  if (persist) schedulePersist()
 }
 
 // ───────────── Scriere ─────────────
+// Fără internet, modificarea se salvează pe telefon și pleacă singură când revine conexiunea.
+function saveOffline(table, payload) {
+  const isNew = !payload.id
+  const row = isNew ? { ...payload, id: uuid() } : payload
+  if (isNew) queue.push({ op: 'insert', table, row })
+  else {
+    // dacă rândul încă așteaptă să fie trimis, îl actualizăm în coadă
+    const q = queue.find((x) => x.op !== 'delete' && x.table === table && x.row.id === row.id)
+    if (q) Object.assign(q.row, row)
+    else queue.push({ op: 'update', table, row })
+  }
+  persistQueue()
+  S.offline = true
+  const local = isNew ? { created_at: new Date().toISOString(), created_by: S.userId, ...row, _pending: true } : { ...row, _pending: true }
+  putLocal(TABLES[table], local)
+  toast(tr('savedOffline'))
+  return { ...local }
+}
+
 export async function save(table, row) {
   const payload = { ...row, family_id: S.family.id }
+  if (S.offline || navigator.onLine === false) return saveOffline(table, payload)
   const q = row.id
     ? supabase.from(table).update(payload).eq('id', row.id).select().single()
     : supabase.from(table).insert(payload).select().single()
   const { data, error } = await q
-  if (error) throw error
+  if (error) {
+    if (isNetErr(error)) return saveOffline(table, payload)
+    throw error
+  }
   putLocal(TABLES[table], data)
+  if (table === 'transactions' && !row.id) maybeAlert([data])
   return data
 }
 
-export async function remove(table, id) {
-  const { error } = await supabase.from(table).delete().eq('id', id)
+// Anunță ceilalți adulți despre o cheltuială mare (doar dacă cineva are pragul pornit)
+function maybeAlert(rows) {
+  const ids = rows.filter((r) => r.kind === 'expense').map((r) => r.id)
+  if (!ids.length || !S.members.some((m) => Number(m.notify?.big) > 0 && m.user_id !== S.userId)) return
+  supabase.functions.invoke('alert', { body: { ids } }).catch(() => {})
+}
+
+// Ce se poate „Anula” după ștergere (fără rânduri copil care s-ar pierde în cascadă)
+const UNDOABLE = ['transactions', 'car_events', 'debts', 'goals', 'recurring', 'investments']
+
+export async function remove(table, id, { onFinal } = {}) {
+  const key = TABLES[table]
+  const copy = S[key].find((x) => x.id === id)
+  const pendingInsert = queue.findIndex((x) => x.op === 'insert' && x.table === table && x.row.id === id)
+  if (pendingInsert >= 0) {
+    // n-a ajuns încă pe server: îl scoatem doar din coadă
+    queue = queue.filter((x) => !(x.table === table && (x.row?.id === id || x.id === id)))
+    persistQueue()
+  } else if (S.offline || navigator.onLine === false) {
+    queue.push({ op: 'delete', table, id }); persistQueue(); S.offline = true
+  } else {
+    const { error } = await supabase.from(table).delete().eq('id', id)
+    if (error) {
+      if (!isNetErr(error)) throw error
+      queue.push({ op: 'delete', table, id }); persistQueue(); S.offline = true
+    }
+  }
+  removeLocal(key, id)
+  if (copy && UNDOABLE.includes(table)) {
+    toast(tr('deletedOne'), { action: tr('undo'), ms: 6000, fn: () => restoreRow(table, copy).catch((e) => toast(tr('error', e))), onTimeout: onFinal })
+  } else onFinal?.()
+}
+
+// Pune înapoi un rând șters (din „Anulează” sau din istoric), cu același ID
+export async function restoreRow(table, row) {
+  const clean = { ...row }
+  delete clean._pending
+  if (S.offline || navigator.onLine === false) {
+    queue = queue.filter((x) => !(x.op === 'delete' && x.table === table && x.id === row.id))
+    if (!S[TABLES[table]].some((x) => x.id === row.id)) queue.push({ op: 'insert', table, row: clean })
+    persistQueue()
+    putLocal(TABLES[table], { ...clean, _pending: true })
+    return
+  }
+  const { data, error } = await supabase.from(table).insert(clean).select().single()
   if (error) throw error
-  removeLocal(TABLES[table], id)
+  putLocal(TABLES[table], data)
+  toast(tr('restored'))
 }
 
 export async function uploadReceipt(file) {

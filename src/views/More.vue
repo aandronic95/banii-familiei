@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { S, me, save, setRate, refreshRates, debtMdl, investMdl, debtsSummary } from '../store.js'
 import { t, lang, setLang } from '../lib/i18n.js'
 import { parseAmount, money0, daysUntil, todayISO, dateLong } from '../lib/format.js'
-import { haptic } from '../lib/telegram.js'
+import { haptic, homeShortcutSupported, homeShortcutStatus, addHomeShortcut } from '../lib/telegram.js'
 import { supabase } from '../lib/supabase.js'
 import { bioState, requestBio, authenticate } from '../lib/biometric.js'
 import { isLockEnabled, setLockEnabled, isBioEnabled, setBioEnabled, pinStatus, pinVerify, pinSet } from '../lib/lock.js'
@@ -14,6 +14,19 @@ import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
 
 const router = useRouter()
+// Iconiță pe ecranul telefonului
+const homeSt = ref(homeShortcutSupported() ? 'unknown' : 'unsupported')
+homeShortcutStatus().then((st) => { homeSt.value = st })
+function addHome() { if (!addHomeShortcut(() => { homeSt.value = 'added'; toast(t('homeAdded')) })) homeSt.value = 'unsupported' }
+// Pragul pentru „cheltuială mare” (MDL); 0 = oprit
+const bigLimit = ref(me.value?.notify?.big ? String(me.value.notify.big) : '')
+async function saveBig() {
+  const v = Math.max(0, Math.round(parseAmount(bigLimit.value) || 0))
+  notify.big = v
+  bigLimit.value = v ? String(v) : ''
+  await saveNotify()
+  toast(v ? t('bigOn', money0(v)) : t('bigOff'))
+}
 const notify = reactive({ loans: true, budget: true, weekly: true, car: true, invest: true, recurring: true, debts: true, monthly: true, backup: false, ...(me.value?.notify || {}) })
 
 // Blocare: cod de rezervă obligatoriu + Face ID, dacă telefonul îl are
@@ -126,6 +139,7 @@ const links = computed(() => [
   { to: '/apple-pay', icon: 'card', title: t('apTitle'), sub: t('apMenuSub') },
   { to: '/import', icon: 'list', title: t('importTitle'), sub: t('importSub') },
   { to: '/family', icon: 'users', title: t('family'), sub: S.members.map((m) => m.name).join(', ') },
+  { to: '/history', icon: 'clock', title: t('histTitle'), sub: t('histSub') },
 ])
 
 async function saveNotify() {
@@ -163,6 +177,21 @@ const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetS
           <div class="bf-row__body"><div class="bf-row__title">{{ t(title) }}</div><div class="bf-row__sub">{{ t(sub) }}</div></div>
           <input :id="'n-' + k" v-model="notify[k]" type="checkbox" class="sw" @change="saveNotify">
         </label>
+        <div class="bf-row" style="align-items: center;">
+          <div class="bf-row__body"><label for="n-big" class="bf-row__title">{{ t('bigTitle') }}</label><div class="bf-row__sub">{{ t('bigSub') }}</div></div>
+          <input id="n-big" v-model="bigLimit" class="inp" inputmode="numeric" :placeholder="t('bigPh')" style="width: 104px; text-align: right;" @change="saveBig">
+        </div>
+      </div>
+    </section>
+
+    <section v-if="homeSt !== 'unsupported'">
+      <div class="bf-list">
+        <button type="button" class="bf-row bf-row--tap" :disabled="homeSt === 'added'" @click="addHome">
+          <div class="bf-row__icon"><Icon name="plus" /></div>
+          <div class="bf-row__body"><div class="bf-row__title">{{ t('homeTitle') }}</div><div class="bf-row__sub">{{ homeSt === 'added' ? t('homeDone') : t('homeSub') }}</div></div>
+          <Icon v-if="homeSt === 'added'" name="tick" />
+          <span v-else class="chev" aria-hidden="true">›</span>
+        </button>
       </div>
     </section>
 

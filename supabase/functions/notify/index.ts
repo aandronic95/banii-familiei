@@ -35,6 +35,9 @@ const T = {
     b100: (cat: string, over: string) => `⛔ Bugetul „${cat}” e depășit cu ${over} MDL.`,
     weekly: (inc: string, exp: string, top: string, bal: string) =>
       `📊 Săptămâna aceasta\nVenituri: +${inc} MDL\nCheltuieli: −${exp} MDL\n${top ? `Cele mai mari: ${top}\n` : ""}Sold total: ${bal} MDL`,
+    mHead: (m: string) => `🗓 Concluzia lunii ${m}`, mInc: "Venituri", mExp: "Cheltuieli", mSaved: "Economisit", mRate: (p: number) => `${p}% din venituri`,
+    mAvg: "Pe zi", mTop: "Unde s-au dus banii:", mUp: (c: string, p: number) => `📈 Cel mai mult a crescut: ${c} (+${p}%)`, mDown: (c: string, p: number) => `📉 Ați redus: ${c} (−${p}%)`,
+    mVs: "față de luna trecută", mNone: "Nicio tranzacție luna trecută.",
   },
   ru: {
     open: "Открыть",
@@ -50,6 +53,9 @@ const T = {
     b100: (cat: string, over: string) => `⛔ Бюджет «${cat}» превышен на ${over} MDL.`,
     weekly: (inc: string, exp: string, top: string, bal: string) =>
       `📊 За неделю\nДоходы: +${inc} MDL\nРасходы: −${exp} MDL\n${top ? `Больше всего: ${top}\n` : ""}Общий баланс: ${bal} MDL`,
+    mHead: (m: string) => `🗓 Итоги месяца: ${m}`, mInc: "Доходы", mExp: "Расходы", mSaved: "Сэкономлено", mRate: (p: number) => `${p}% от доходов`,
+    mAvg: "В день", mTop: "Куда ушли деньги:", mUp: (c: string, p: number) => `📈 Больше всего выросло: ${c} (+${p}%)`, mDown: (c: string, p: number) => `📉 Сократили: ${c} (−${p}%)`,
+    mVs: "к прошлому месяцу", mNone: "За прошлый месяц операций нет.",
   },
 };
 
@@ -227,12 +233,100 @@ async function weekly(today: string) {
   }
 }
 
+// Pe 1 ale lunii: concluzia lunii trecute (unde s-au dus banii, ce a crescut, cât ați economisit)
+const MONTHS = {
+  ro: ["ianuarie", "februarie", "martie", "aprilie", "mai", "iunie", "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie"],
+  ru: ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"],
+};
+function monthBounds(y: number, m: number): [string, string, number] {
+  const last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const mm = String(m + 1).padStart(2, "0");
+  return [`${y}-${mm}-01`, `${y}-${mm}-${String(last).padStart(2, "0")}`, last];
+}
+export function monthSummary(txs: any[], toMdl: (a: number, c: string) => number, from: string, to: string) {
+  let inc = 0, exp = 0;
+  const byCat: Record<string, { ro: string; ru: string; v: number }> = {};
+  for (const t of txs) {
+    if (t.date < from || t.date > to || (t.kind !== "income" && t.kind !== "expense")) continue;
+    const v = toMdl(Number(t.amount), t.accounts?.currency ?? "MDL");
+    if (t.kind === "income") { inc += v; continue; }
+    exp += v;
+    const k = t.category_id ?? "-";
+    byCat[k] ??= { ro: t.categories?.name_ro ?? "Altele", ru: t.categories?.name_ru ?? "Другое", v: 0 };
+    byCat[k].v += v;
+  }
+  return { inc, exp, byCat };
+}
+
+async function monthly(today: string) {
+  const rates = await latestRates();
+  const toMdl = (a: number, cur: string) => a * (rates[cur] ?? 1);
+  const [ty, tm] = today.split("-").map(Number);
+  const pm = new Date(Date.UTC(ty, tm - 2, 1)), ppm = new Date(Date.UTC(ty, tm - 3, 1));
+  const [from, to, days] = monthBounds(pm.getUTCFullYear(), pm.getUTCMonth());
+  const [pfrom, pto, pdays] = monthBounds(ppm.getUTCFullYear(), ppm.getUTCMonth());
+  const { data: families } = await db.from("families").select("id");
+  for (const f of families ?? []) {
+    if (!(await once(`monthsum:${f.id}:${from}`))) continue;
+    const { data: mem } = await db.from("members").select("telegram_id, lang, notify")
+      .eq("family_id", f.id).in("role", ["owner", "editor"]).not("telegram_id", "is", null);
+    const members = (mem ?? []) as Member[];
+    if (!members.length) continue;
+    const { data: txs } = await db.from("transactions").select("kind, amount, date, category_id, accounts!transactions_account_id_fkey(currency), categories(name_ro, name_ru)")
+      .eq("family_id", f.id).gte("date", pfrom).lte("date", to).in("kind", ["income", "expense"]);
+    const cur = monthSummary(txs ?? [], toMdl, from, to);
+    const prev = monthSummary(txs ?? [], toMdl, pfrom, pto);
+    const pct = (a: number, b: number) => (b > 0 ? Math.round(((a - b) / b) * 100) : null);
+
+    await send(members, "monthly", (lg) => {
+      const L = T[lg];
+      const head = L.mHead(`${MONTHS[lg][pm.getUTCMonth()]} ${pm.getUTCFullYear()}`);
+      if (!cur.inc && !cur.exp) return `${head}\n${L.mNone}`;
+      const d = pct(cur.exp, prev.exp);
+      const vs = d === null ? "" : ` (${d > 0 ? "+" : d < 0 ? "−" : ""}${Math.abs(d)}% ${L.mVs})`;
+      const saved = cur.inc - cur.exp;
+      const lines = [
+        head,
+        `${L.mInc}: +${fmt(cur.inc)} MDL`,
+        `${L.mExp}: −${fmt(cur.exp)} MDL${vs}`,
+        `${L.mSaved}: ${saved >= 0 ? "+" : "−"}${fmt(Math.abs(saved))} MDL` + (cur.inc > 0 ? ` · ${L.mRate(Math.round((saved / cur.inc) * 100))}` : ""),
+        `${L.mAvg}: ${fmt(cur.exp / days)} MDL` + (prev.exp ? ` (${fmt(prev.exp / pdays)} ${lg === "ru" ? "раньше" : "înainte"})` : ""),
+      ];
+      const top = Object.entries(cur.byCat).sort((a, b) => b[1].v - a[1].v).slice(0, 3);
+      if (top.length) {
+        lines.push("", L.mTop);
+        for (const [k, c] of top) {
+          const p = pct(c.v, prev.byCat[k]?.v ?? 0);
+          lines.push(`• ${lg === "ru" ? c.ru : c.ro}: ${fmt(c.v)} MDL · ${Math.round((c.v / cur.exp) * 100)}%` + (p === null ? "" : ` (${p > 0 ? "+" : p < 0 ? "−" : ""}${Math.abs(p)}%)`));
+        }
+      }
+      // Cea mai mare creștere și cea mai mare reducere (doar sume care contează, peste 300 MDL)
+      const ch = Object.keys({ ...cur.byCat, ...prev.byCat }).map((k) => {
+        const a = cur.byCat[k]?.v ?? 0, b = prev.byCat[k]?.v ?? 0;
+        const c = cur.byCat[k] ?? prev.byCat[k];
+        return { name: lg === "ru" ? c.ru : c.ro, diff: a - b, p: pct(a, b) };
+      }).filter((x) => x.p !== null && Math.abs(x.diff) >= 300);
+      const up = ch.filter((x) => x.diff > 0).sort((a, b) => b.diff - a.diff)[0];
+      const down = ch.filter((x) => x.diff < 0).sort((a, b) => a.diff - b.diff)[0];
+      if (up || down) lines.push("");
+      if (up) lines.push(L.mUp(up.name, up.p!));
+      if (down) lines.push(L.mDown(down.name, Math.abs(down.p!)));
+      return lines.join("\n");
+    });
+  }
+}
+
 Deno.serve(async (req) => {
   const expected = await derivedSecret(BOT_TOKEN, "cron");
   if (req.headers.get("x-cron-secret") !== expected) return new Response("forbidden", { status: 403 });
   const task = new URL(req.url).searchParams.get("task") ?? "daily";
   const today = todayLocal();
   if (task === "weekly") await weekly(today);
-  else await daily(today);
+  else if (task === "monthly") await monthly(today);
+  else {
+    await daily(today);
+    // Istoricul modificărilor se păstrează un an
+    await db.from("audit_log").delete().lt("at", new Date(Date.now() - 365 * 86400000).toISOString());
+  }
   return new Response(JSON.stringify({ ok: true, task, today }), { headers: { "content-type": "application/json" } });
 });

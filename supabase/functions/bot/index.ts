@@ -1,5 +1,6 @@
 // Webhook-ul botului: /start (cu sau fără invitație), /id, /ajutor,
 // cheltuieli scrise direct („cafea 45”) și butonul „Anulează”.
+import { bigSpendAlert } from "../_shared/alert.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { parseQuick, pickAccount } from "../_shared/quick.ts";
@@ -66,6 +67,7 @@ async function saveQuick(member: { id: string; family_id: string; user_id: strin
     car_id: carId, car_kind: carKind,
   }).select("id").single();
   if (error || !tx) return { error: "save" as const };
+  if (q.kind === "expense") await bigSpendAlert(db, BOT_TOKEN, APP_URL, tx.id).catch(() => 0);
   const cat = (cats ?? []).find((c) => c.id === categoryId);
   return { tx, q, account, cat };
 }

@@ -122,16 +122,17 @@ async function submit() {
       investment_id: f.kind === 'transfer' ? null : f.investment_id || null,
     }
     if (orig?.receipt_path && orig.receipt_path !== row.receipt_path) supabase.storage.from('receipts').remove([orig.receipt_path])
-    await save('transactions', row)
-    haptic('success'); toast(t('saved')); router.back()
+    const saved = await save('transactions', row)
+    haptic('success'); if (!saved._pending) toast(t('saved')); router.back()
   } catch (e) { console.error(e); err.value = t('error', e); haptic('error') } finally { busy.value = false }
 }
 
 async function del() {
   if (!(await confirmDialog(t('deleteTxQ')))) return
   try {
-    await remove('transactions', orig.id)
-    if (orig.receipt_path) supabase.storage.from('receipts').remove([orig.receipt_path])
+    // Poza bonului se șterge doar după ce trece timpul pentru „Anulează”
+    const path = orig.receipt_path
+    await remove('transactions', orig.id, { onFinal: () => { if (path) supabase.storage.from('receipts').remove([path]) } })
     router.back()
   } catch (e) { console.error(e); err.value = t('error', e) }
 }

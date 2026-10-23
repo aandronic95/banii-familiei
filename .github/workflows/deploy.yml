@@ -114,3 +114,6 @@ jobs:
           PN=$(curl -s -o /tmp/pn -w '%{http_code}' -X POST "$BASE/pin" -H 'content-type: application/json' -d '{"action":"verify","pin":"1234"}')
           echo "pin fără login: $PN"
           [ "$PN" = "401" ] || { echo "::error::pin trebuia să ceară login (401), a răspuns $PN"; exit 1; }
+          AL=$(curl -s -o /tmp/al -w '%{http_code}' -X POST "$BASE/alert" -H 'content-type: application/json' -d '{"id":"00000000-0000-0000-0000-000000000000"}')
+          echo "alert fără login: $AL"
+          [ "$AL" = "401" ] || { echo "::error::alert trebuia să ceară login (401), a răspuns $AL"; exit 1; }

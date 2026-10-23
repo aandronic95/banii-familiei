@@ -22,3 +22,6 @@ verify_jwt = false
 
 [functions.pin]
 verify_jwt = false
+
+[functions.alert]
+verify_jwt = false

@@ -32,6 +32,7 @@ const routes = [
   { path: '/import', name: 'import', component: () => import('./views/Import.vue'), meta: { form: true } },
   { path: '/apple-pay', name: 'applePay', component: () => import('./views/ApplePay.vue') },
   { path: '/family', name: 'family', component: () => import('./views/Family.vue') },
+  { path: '/history', name: 'history', component: () => import('./views/History.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
@@ -43,3 +44,8 @@ const router = createRouter({
 
 createApp(App).use(router).mount('#app')
 router.push('/')
+
+// Copia aplicației pe telefon (unde e permis; în unele aplicații iOS nu e disponibil și nu e nicio problemă)
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => navigator.serviceWorker.register(import.meta.env.BASE_URL + 'sw.js').catch(() => {}))
+}

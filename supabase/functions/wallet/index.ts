@@ -1,5 +1,6 @@
 // Primește plățile Apple Pay trimise de Scurtături (iOS → Automatizare „Tranzacție”)
 // și le salvează ca cheltuieli. Autentificare: cheia secretă a telefonului, în corpul cererii.
+import { bigSpendAlert } from "../_shared/alert.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { tg } from "../_shared/telegram.ts";
 import { guessCategoryIcon, matchAccount, parseWalletAmount } from "../_shared/wallet.ts";
@@ -120,5 +121,6 @@ A fost doar un test, nu s-a salvat nimic. La următoarea plată cu Apple Pay, ch
     }).catch(() => {});
   }
 
+  await bigSpendAlert(db, BOT_TOKEN, APP_URL, tx.id).catch(() => 0);
   return reply({ ok: true, id: tx.id, message: line });
 });
