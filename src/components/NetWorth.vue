@@ -56,6 +56,8 @@ const aria = computed(() => pts.value.map((p) => `${monthShort(p.month)}: ${mone
     <div class="kv"><span class="muted">{{ t('assets') }}</span><b>{{ money0(shown.assets) }} MDL</b></div>
     <div v-if="shown.property" class="kv"><span class="muted">{{ t('bunuri') }}</span><b>{{ money0(shown.property) }} MDL</b></div>
     <div v-if="shown.invest" class="kv"><span class="muted">{{ t('investments') }}</span><b>{{ money0(shown.invest) }} MDL</b></div>
+    <div v-if="shown.goals" class="kv"><span class="muted">{{ t('goalsTitle') }}</span><b>{{ money0(shown.goals) }} MDL</b></div>
+    <div v-if="shown.personal" class="kv"><span class="muted">{{ t('nwPersonal') }}</span><b :class="shown.personal < 0 ? 'bf-expense' : ''">{{ shown.personal > 0 ? '+' : '−' }}{{ money0(Math.abs(shown.personal)) }} MDL</b></div>
     <div class="kv"><span class="muted">{{ t('liabilities') }}</span><b class="bf-expense">−{{ money0(shown.debt) }} MDL</b></div>
     <p class="hint" style="margin: 0;">{{ t('nwHint') }} <button v-if="!shown.property" type="button" class="link" style="padding: 0;" @click="$router.push({ path: '/account/new', query: { type: 'asset' } })">{{ t('assetAdd') }} ›</button></p>
   </div>

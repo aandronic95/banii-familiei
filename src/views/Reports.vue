@@ -3,12 +3,13 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { S, periodSums, categoryById, memberById, totalMdl, debtMdl, investMdl, monthRange } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
-import { money0, todayISO, monthShort } from '../lib/format.js'
+import { money0, todayISO, monthShort, dateShort } from '../lib/format.js'
 import DailySpend from '../components/DailySpend.vue'
 import SpendCalendar from '../components/SpendCalendar.vue'
 import NetWorth from '../components/NetWorth.vue'
 import Subscriptions from '../components/Subscriptions.vue'
 import Projects from '../components/Projects.vue'
+import DataCheck from '../components/DataCheck.vue'
 
 const router = useRouter()
 const period = ref('month')
@@ -20,6 +21,7 @@ const range = computed(() => {
   return monthRange(today)
 })
 const sums = computed(() => periodSums(...range.value))
+const rangeLabel = computed(() => `${dateShort(range.value[0], true)} – ${dateShort(range.value[1] > today ? today : range.value[1], true)}`)
 
 // Ultimele 6 luni
 const months = computed(() => {
@@ -54,6 +56,8 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
       <button v-for="p in ['week', 'month', 'year']" :key="p" type="button" class="bf-chip" :class="{ 'bf-chip--on': period === p }" @click="period = p">{{ t(p) }}</button>
     </div>
 
+    <DataCheck />
+
     <div class="bf-card stack">
       <h2 class="h-sec">{{ t('incomeVsExpense') }}</h2>
       <div style="display: flex; gap: 16px;"><span class="lg"><i style="background: var(--income);"></i>{{ t('incomes') }}</span><span class="lg"><i style="background: var(--expense);"></i>{{ t('expenses') }}</span></div>
@@ -69,6 +73,7 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
       <div class="kv"><span class="muted">{{ t('incomes') }}</span><b class="bf-income">+{{ money0(sums.inc) }} MDL</b></div>
       <div class="kv"><span class="muted">{{ t('expenses') }}</span><b class="bf-expense">−{{ money0(sums.exp) }} MDL</b></div>
       <div class="kv"><span class="muted">{{ t('savedIn') }}</span><b :class="sums.inc - sums.exp >= 0 ? 'bf-income' : 'bf-expense'">{{ sums.inc - sums.exp >= 0 ? '+' : '' }}{{ money0(sums.inc - sums.exp) }} MDL</b></div>
+      <p class="hint" style="margin: 0;">{{ t('ieHint', rangeLabel) }}</p>
     </div>
 
     <DailySpend />

@@ -15,6 +15,7 @@ const router = useRouter()
 const accountId = route.query.account || ''
 const categoryId = route.query.category || ''
 const tag = route.query.tag || ''
+const uncat = route.query.uncat === '1'
 const acc = accountId ? accountById(accountId) : null
 const cat = categoryId ? categoryById(categoryId) : null
 const who = ref('')
@@ -40,6 +41,7 @@ const list = computed(() => {
     .filter((x) => !accountId || x.account_id === accountId || x.to_account_id === accountId)
     .filter((x) => !categoryId || x.category_id === categoryId)
     .filter((x) => !tag || (x.tags || []).includes(tag))
+    .filter((x) => !uncat || (x.kind === 'expense' && !x.category_id))
     .filter((x) => !who.value || x.member_id === who.value)
     .filter((x) => !F.kind || x.kind === F.kind)
     .filter((x) => !F.account || x.account_id === F.account || x.to_account_id === F.account)
@@ -56,7 +58,7 @@ const summary = computed(() => {
   for (const x of list.value) { if (x.kind === 'expense') exp += toMdl(x.amount, txCurrency(x)); if (x.kind === 'income') inc += toMdl(x.amount, txCurrency(x)) }
   return { exp, inc, n: list.value.length }
 })
-const filtering = computed(() => nF.value > 0 || !!q.value.trim() || !!who.value || !!tag || !!categoryId || !!accountId)
+const filtering = computed(() => nF.value > 0 || !!q.value.trim() || !!who.value || !!tag || uncat || !!categoryId || !!accountId)
 const sending = ref(false)
 async function exportList() {
   sending.value = true
@@ -83,7 +85,7 @@ const groups = computed(() => {
 <template>
   <main class="page">
     <div class="sec-head">
-      <h1 class="h-title">{{ acc ? acc.name : cat ? catName(cat) : tag ? '#' + tag : t('transactions') }}</h1>
+      <h1 class="h-title">{{ acc ? acc.name : cat ? catName(cat) : tag ? '#' + tag : uncat ? t('noCategory') : t('transactions') }}</h1>
       <button v-if="acc" type="button" class="bf-btn bf-btn--secondary" style="min-height: 40px;" @click="router.push('/account/' + acc.id)">{{ t('edit') }}</button>
     </div>
 

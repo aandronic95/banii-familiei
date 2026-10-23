@@ -610,7 +610,26 @@ export function netWorthAt(iso) {
     if (l.closed && rem <= 0) continue
     debt += toMdl(rem, l.currency)
   }
-  return { assets, property, invest, debt, net: assets + property + invest - debt }
+  // Datorii personale: ce ne datorează alții (+) și ce datorăm noi (−), rămas la acea dată.
+  // Banii dați cu împrumut ies din cont, dar nu dispar: rămân ca datorie de primit.
+  let personal = 0
+  for (const d of S.debts) {
+    if ((d.date || '') > iso) continue
+    const later = S.transactions.filter((x) => x.debt_id === d.id && x.date > iso && x.kind === (d.direction === 'owed_to_us' ? 'divest' : 'invest'))
+      .reduce((sum, x) => sum + Number(x.amount), 0)
+    const left = Math.max(0, Number(d.amount) - Number(d.paid || 0) + (iso >= todayISO() ? 0 : later))
+    if (d.settled && iso >= todayISO()) continue
+    personal += (d.direction === 'owed_to_us' ? 1 : -1) * toMdl(left, d.currency)
+  }
+  // Obiective fără cont: banii „puși deoparte” au ieșit din cont, dar sunt tot ai voștri
+  let goals = 0
+  const goalNames = new Set(S.goals.filter((g) => !g.account_id).map((g) => (g.name || '').trim().toLowerCase()))
+  const goalNotes = new Set([tr('goalsTitle'), 'Obiective de economii', 'Цели накоплений'].map((x) => String(x).toLowerCase()))
+  for (const x of S.transactions) {
+    if (x.kind !== 'invest' || x.investment_id || x.debt_id || x.date > iso) continue
+    if (goalNames.has((x.merchant || '').trim().toLowerCase()) && goalNotes.has((x.note || '').toLowerCase())) goals += toMdl(x.amount, txCurrency(x))
+  }
+  return { assets, property, invest, debt, personal, goals, net: assets + property + invest + goals + personal - debt }
 }
 
 // Ultimele n luni: valoarea la sfârșitul fiecărei luni (luna curentă = azi)

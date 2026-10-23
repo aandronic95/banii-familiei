@@ -323,3 +323,25 @@ test('bunuri: mașina pierde din valoare în timp', async () => {
   assert.equal(assetValue(10000, 0, '2026-10-23', '2030-01-01'), 10000)
   assert.ok(Math.abs(assetValue(8800, 12, '2027-10-23', '2026-10-23') - 10000) < 3) // înapoi în timp: valoarea era mai mare
 })
+
+test('verificare: dubluri și transferuri ascunse', async () => {
+  const { findDuplicates, findHiddenTransfers } = await import('../src/lib/checks.js')
+  const tx = (id, kind, amount, account_id, date, merchant, extra = {}) => ({ id, kind, amount, account_id, date, merchant, ...extra })
+  const txs = [
+    tx('1', 'expense', 385.5, 'a', '2026-10-20', 'LINELLA SRL'),
+    tx('2', 'expense', 385.5, 'a', '2026-10-21', 'Linella'),            // dublura lui 1 (Apple Pay + import)
+    tx('3', 'expense', 45, 'a', '2026-10-21', 'Cafea'),
+    tx('4', 'expense', 45, 'a', '2026-10-21', 'Ceai'),                   // aceeași sumă, alt lucru: nu e dublură
+    tx('5', 'expense', 2000, 'maib', '2026-10-15', 'Top-up Revolut'),
+    tx('6', 'income', 100, 'rev', '2026-10-16', 'Top-Up by *4821'),       // 100 EUR ≈ 2000 MDL
+    tx('7', 'expense', 900, 'a', '2026-10-10', null, { split_id: 's' }),
+    tx('8', 'expense', 900, 'a', '2026-10-10', null, { split_id: 's' }),  // părți din același bon: nu
+    tx('9', 'income', 14200, 'maib', '2026-10-05', 'Salariu'),
+  ]
+  const d = findDuplicates(txs)
+  assert.deepEqual(d.map((x) => [x.keep.id, x.dup.id]), [['1', '2']])
+  assert.equal(findDuplicates(txs, { ignored: ['1+2'] }).length, 0)
+  const rate = { maib: 1, a: 1, rev: 20 }
+  const h = findHiddenTransfers(txs, (x) => x.amount * rate[x.account_id])
+  assert.deepEqual(h.map((x) => [x.out.id, x.in.id]), [['5', '6']])
+})
