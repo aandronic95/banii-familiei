@@ -1,11 +1,13 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, balances, activeAccounts, totalMdl, totalsByCurrency, memberById, debtMdl, investMdl, activeInvestments } from '../store.js'
+import { S, balances, activeAccounts, totalMdl, totalsByCurrency, memberById, debtMdl, activeInvestments, growthAt, depositLive } from '../store.js'
 import { t } from '../lib/i18n.js'
 import { money, money0 } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
 import { privacy, togglePrivacy } from '../lib/privacy.js'
+import AnimatedNumber from '../components/AnimatedNumber.vue'
+import { nowMs } from '../lib/live.js'
 
 const router = useRouter()
 const groups = computed(() => [
@@ -23,6 +25,8 @@ const sub = (a) => {
   bits.push(m ? m.name : t('common'))
   return { text: bits.join(' · '), dot: m ? `bf-dot bf-p${m.color}` : null }
 }
+const growth = computed(() => growthAt(nowMs.value))
+const dep = (a) => depositLive(a, nowMs.value)
 const openLoans = computed(() => S.loans.filter((l) => !l.closed).length)
 const fmtRate = (r) => String(r).replace('.', ',')
 </script>
@@ -39,7 +43,7 @@ const fmtRate = (r) => String(r).replace('.', ',')
 
     <div class="bf-card">
       <div class="bf-balance__label">{{ t('totalMdl') }}</div>
-      <div class="bf-balance__amount">{{ money(totalMdl) }}<span class="bf-balance__cur">MDL</span></div>
+      <div class="bf-balance__amount"><AnimatedNumber :value="totalMdl" /><span class="bf-balance__cur">MDL</span></div>
       <div class="bf-chips" style="margin-top: 12px;">
         <span v-for="(v, c) in totalsByCurrency" :key="c" class="bf-chip">{{ money0(v) }} {{ c }}</span>
       </div>
@@ -55,7 +59,7 @@ const fmtRate = (r) => String(r).replace('.', ',')
             <div class="bf-row__title">{{ a.name }}</div>
             <div class="bf-row__sub"><span v-if="sub(a).dot" :class="sub(a).dot"></span>{{ sub(a).text }}</div>
           </div>
-          <div class="bf-row__amount">{{ money(balances[a.id]) }}<small>{{ a.currency }}</small></div>
+          <div class="bf-row__amount"><AnimatedNumber :value="balances[a.id] ?? 0" /><small v-if="a.type === 'deposit' && a.interest_rate && dep(a).accrued > 0" class="bf-income" :title="t('depInterest')"><AnimatedNumber :value="dep(a).accrued" :decimals="4" sign :flash="false" :duration="950" /> {{ a.currency }}</small><small v-else>{{ a.currency }}</small></div>
         </button>
       </div>
     </section>
@@ -63,7 +67,7 @@ const fmtRate = (r) => String(r).replace('.', ',')
     <button type="button" class="bf-row bf-list bf-row--tap" @click="router.push('/investments')">
       <div class="bf-row__icon"><Icon name="chart" /></div>
       <div class="bf-row__body"><div class="bf-row__title">{{ t('investments') }}</div><div class="bf-row__sub">{{ t('positions', activeInvestments.length) }}</div></div>
-      <div class="bf-row__amount">{{ money0(investMdl) }}<small>MDL</small></div>
+      <div class="bf-row__amount"><AnimatedNumber :value="growth.invest" :decimals="0" :flash="false" /><small>MDL</small></div>
     </button>
 
     <button type="button" class="bf-row bf-list bf-row--tap" @click="router.push('/credits')">

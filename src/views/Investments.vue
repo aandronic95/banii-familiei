@@ -1,13 +1,18 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, investStatuses, investMdl, investedMdl, toMdl, memberById } from '../store.js'
+import { S, investStatuses, investedMdl, toMdl, memberById, growthAt, liveInvestValue } from '../store.js'
 import { t } from '../lib/i18n.js'
 import { money, money0, dateLong, daysUntil } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
+import AnimatedNumber from '../components/AnimatedNumber.vue'
+import { nowMs } from '../lib/live.js'
 
 const router = useRouter()
 const showClosed = ref(false)
+const growth = computed(() => growthAt(nowMs.value))
+const live = (i) => liveInvestValue(i, nowMs.value)
+const ticks = (i) => ['gov_bond', 'tbill', 'other'].includes(i.kind) && i.rate && i.current_value == null
 const KIND_ICON = { gov_bond: 'bank', tbill: 'bank', p2p: 'users', stocks: 'chart', other: 'piggy' }
 
 const list = computed(() => S.investments.filter((i) => showClosed.value || i.status !== 'closed'))
@@ -26,7 +31,7 @@ const totals = computed(() => {
   let profit = 0, received = 0
   for (const i of S.investments) {
     const st = investStatuses.value[i.id]
-    if (i.status !== 'closed') profit += toMdl(st.value - Number(i.amount), i.currency)
+    if (i.status !== 'closed') profit += toMdl(live(i) - Number(i.amount), i.currency)
     received += toMdl(st.received, i.currency)
   }
   return { profit, received }
@@ -64,11 +69,17 @@ function badge(i) {
 
     <div class="bf-card">
       <div class="bf-balance__label">{{ t('invValue') }}</div>
-      <div class="bf-balance__amount">{{ money(investMdl) }}<span class="bf-balance__cur">MDL</span></div>
+      <div class="bf-balance__amount"><AnimatedNumber :value="growth.invest" :flash="false" /><span class="bf-balance__cur">MDL</span></div>
       <div class="bf-balance__meta" style="flex-wrap: wrap;">
         <span>{{ t('invInvested') }}: <b>{{ money0(investedMdl) }}</b></span>
-        <span>{{ t('invProfit') }}: <b :class="totals.profit >= 0 ? 'bf-income' : 'bf-expense'">{{ totals.profit >= 0 ? '+' : '' }}{{ money(totals.profit) }}</b></span>
+        <span>{{ t('invProfit') }}: <b :class="totals.profit >= 0 ? 'bf-income' : 'bf-expense'"><AnimatedNumber :value="totals.profit" :decimals="2" sign :flash="false" :duration="950" /></b></span>
         <span v-if="totals.received">{{ t('invReceived') }}: <b class="bf-income">+{{ money0(totals.received) }}</b></span>
+      </div>
+      <div v-if="growth.perDay > 0" class="live">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span>{{ t('liveNow') }}</span>
+        <b><AnimatedNumber :value="growth.accrued" :decimals="6" sign :duration="950" :flash="false" /> MDL</b>
+        <span style="margin-left: auto;">{{ t('livePerDay', money(growth.perDay)) }}</span>
       </div>
       <div v-if="byKind.length > 1" class="bf-chips" style="margin-top: 12px;">
         <span v-for="[k, v] in byKind" :key="k" class="bf-chip">{{ t('invKind_' + k) }} · {{ money0(v) }}</span>
@@ -94,9 +105,9 @@ function badge(i) {
             <span v-if="badge(i)" class="role" :style="badge(i).style + 'display: inline-block; margin-top: 4px;'">{{ badge(i).text }}</span>
           </div>
           <div class="bf-row__amount">
-            {{ money(investStatuses[i.id].closed ? i.amount : investStatuses[i.id].value) }} {{ i.currency !== 'MDL' ? i.currency : '' }}
-            <small v-if="!investStatuses[i.id].closed && investStatuses[i.id].value !== Number(i.amount)" :class="investStatuses[i.id].value > i.amount ? 'bf-income' : 'bf-expense'">
-              {{ investStatuses[i.id].value > i.amount ? '+' : '' }}{{ money(investStatuses[i.id].value - i.amount) }}
+            <template v-if="investStatuses[i.id].closed">{{ money(i.amount) }}</template><AnimatedNumber v-else :value="live(i)" :flash="false" /> {{ i.currency !== 'MDL' ? i.currency : '' }}
+            <small v-if="!investStatuses[i.id].closed && Math.abs(live(i) - i.amount) >= 0.0001" :class="live(i) > i.amount ? 'bf-income' : 'bf-expense'">
+              <AnimatedNumber :value="live(i) - i.amount" :decimals="ticks(i) ? 4 : 2" sign :flash="false" :duration="950" />
             </small>
             <small v-else-if="i.currency === 'MDL'">MDL</small>
           </div>

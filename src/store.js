@@ -3,7 +3,7 @@ import { supabase } from './lib/supabase.js'
 import { tg, inTelegram } from './lib/telegram.js'
 import { loanStatus, nextOccurrence } from './lib/loan.js'
 import { todayISO } from './lib/format.js'
-import { accruedInterest } from './lib/invest.js'
+import { accruedInterest, liveAccrued, perDay } from './lib/invest.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -290,6 +290,84 @@ export const investMdl = computed(() =>
   activeInvestments.value.reduce((s, i) => s + toMdl(investStatuses.value[i.id].value, i.currency), 0))
 export const investedMdl = computed(() =>
   activeInvestments.value.reduce((s, i) => s + toMdl(i.amount, i.currency), 0))
+
+// ───────────── Cifre „vii”: dobânda crește secundă cu secundă ─────────────
+const msOf = (iso) => (iso ? Date.parse(iso) : null)
+const liveAccrues = (inv) => ACCRUING.includes(inv.kind) && inv.rate && inv.current_value == null && inv.status !== 'closed'
+
+export function liveInvestValue(inv, now = Date.now()) {
+  const st = investStatuses.value[inv.id]
+  if (!st || st.closed) return 0
+  if (!liveAccrues(inv)) return st.value
+  return Number(inv.amount) + liveAccrued(inv.amount, inv.rate, msOf(inv.start_date), msOf(inv.maturity_date), now)
+}
+
+// Depozite cu dobândă: estimare de la ultima dobândă primită (sau de la deschiderea contului)
+const depositSince = computed(() => {
+  const o = {}
+  for (const a of S.accounts) {
+    if (a.type !== 'deposit' || !a.interest_rate) continue
+    let since = a.created_at ? Date.parse(a.created_at.slice(0, 10)) : Date.now()
+    for (const x of S.transactions) if (x.account_id === a.id && x.kind === 'income') since = Math.max(since, Date.parse(x.date))
+    o[a.id] = since
+  }
+  return o
+})
+export function depositLive(a, now = Date.now()) {
+  const bal = balances.value[a.id] ?? 0
+  const since = depositSince.value[a.id]
+  if (!since || bal <= 0) return { accrued: 0, perDay: 0 }
+  const end = msOf(a.maturity_date)
+  return { accrued: liveAccrued(bal, a.interest_rate, since, end, now), perDay: end != null && end < now ? 0 : perDay(bal, a.interest_rate) }
+}
+
+// Totalul care „crește acum”, în MDL
+export function growthAt(now = Date.now()) {
+  let accrued = 0, daily = 0, invest = 0
+  for (const i of activeInvestments.value) {
+    const v = liveInvestValue(i, now)
+    invest += toMdl(v, i.currency)
+    if (!liveAccrues(i)) continue
+    accrued += toMdl(v - Number(i.amount), i.currency)
+    if (!i.maturity_date || msOf(i.maturity_date) > now) daily += toMdl(perDay(i.amount, i.rate), i.currency)
+  }
+  let deposit = 0
+  for (const a of activeAccounts.value) {
+    if (a.type !== 'deposit' || !a.interest_rate) continue
+    const d = depositLive(a, now)
+    deposit += toMdl(d.accrued, a.currency)
+    daily += toMdl(d.perDay, a.currency)
+  }
+  return { accrued: accrued + deposit, deposit, perDay: daily, invest }
+}
+
+// ───────────── Cheltuieli pe zi ─────────────
+const DAYMS = 86400000
+const isoAdd = (iso, days) => new Date(Date.parse(iso) + days * DAYMS).toISOString().slice(0, 10)
+export function monthsBack(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number)
+  const t = new Date(Date.UTC(y, m - 1 - n, 1))
+  const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate()
+  t.setUTCDate(Math.min(d, last))
+  return isoAdd(t.toISOString().slice(0, 10), 1)
+}
+
+// Sumele zilnice de cheltuieli (MDL) între from și to, inclusiv zilele fără cheltuieli
+export function dailySpend(from, to, { noLoans = false } = {}) {
+  const bank = new Set(S.categories.filter((c) => c.icon === 'bank').map((c) => c.id))
+  const days = {}, byCat = {}
+  for (let d = from; d <= to; d = isoAdd(d, 1)) days[d] = 0
+  for (const x of S.transactions) {
+    if (x.kind !== 'expense' || x.date < from || x.date > to) continue
+    if (noLoans && (bank.has(x.category_id) || x.loan_id)) continue
+    const v = toMdl(x.amount, txCurrency(x))
+    days[x.date] += v
+    const c = x.category_id || '-'
+    byCat[c] = (byCat[c] || 0) + v
+  }
+  return { days, byCat }
+}
+export const firstTxDate = computed(() => S.transactions.reduce((m, x) => (!m || x.date < m ? x.date : m), null))
 
 export const txCurrency = (t) => accountById(t.account_id)?.currency || 'MDL'
 

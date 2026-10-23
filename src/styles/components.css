@@ -71,3 +71,29 @@
 .bf-banner--danger svg { color: var(--danger); }
 
 .bf-icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Cifre vii */
+.anum { font-variant-numeric: tabular-nums; transition: color .5s ease; }
+.anum--up { color: var(--income); }
+.anum--down { color: var(--expense); }
+.live { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line, rgba(127,127,127,.18)); font: 500 13px/18px var(--font-sans); color: var(--ink-muted); }
+.live b { color: var(--income); font-variant-numeric: tabular-nums; font-weight: 600; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--income); flex: none; box-shadow: 0 0 0 0 var(--income); animation: live-pulse 2s infinite; }
+@keyframes live-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--income) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } .anum { transition: none; } }
+
+/* Cheltuieli pe zi */
+.dbars { display: flex; align-items: flex-end; gap: 2px; height: 120px; position: relative; }
+.dbars__b { flex: 1 1 0; min-width: 2px; border-radius: 3px 3px 1px 1px; background: var(--expense); opacity: .85; }
+.dbars__b--zero { background: var(--ink-muted); opacity: .25; }
+.dbars__b--max { opacity: 1; }
+.dbars__avg { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--ink); opacity: .45; pointer-events: none; }
+.dbars__axis { display: flex; justify-content: space-between; margin-top: 6px; }
+.dstats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dstat { background: var(--bg); border-radius: 12px; padding: 10px 12px; min-width: 0; }
+.dstat__v { font: 600 17px/22px var(--font-sans); font-variant-numeric: tabular-nums; }
+.dstat__l { font: 500 12px/16px var(--font-sans); color: var(--ink-muted); }
+.wd { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; align-items: end; height: 92px; }
+.wd > div { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.wd i { display: block; width: 100%; max-width: 26px; border-radius: 4px 4px 2px 2px; background: var(--expense); opacity: .75; }
+.wd i.top { opacity: 1; }

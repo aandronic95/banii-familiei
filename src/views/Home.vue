@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, isOwner, totalMdl, debtMdl, investMdl, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
+import { S, me, isOwner, totalMdl, debtMdl, growthAt, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
@@ -9,6 +9,8 @@ import BudgetBar from '../components/BudgetBar.vue'
 import Icon from '../components/Icon.vue'
 import { privacy, togglePrivacy } from '../lib/privacy.js'
 import { haptic } from '../lib/telegram.js'
+import AnimatedNumber from '../components/AnimatedNumber.vue'
+import { nowMs } from '../lib/live.js'
 
 const router = useRouter()
 const now = new Date()
@@ -16,6 +18,7 @@ const title = `${monthName(now.getMonth())} ${now.getFullYear()}`
 const month = computed(() => { const [a, b] = monthRange(); return periodSums(a, b) })
 const recent = computed(() => [...S.transactions].sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at)).slice(0, 6))
 const budgets = computed(() => [...budgetRows.value].sort((a, b) => b.pct - a.pct).slice(0, 4))
+const growth = computed(() => growthAt(nowMs.value))
 const adults = computed(() => S.members.filter((m) => m.role !== 'none'))
 
 // Ghid de pornire: dispare singur când totul e făcut, sau când îl închizi
@@ -85,12 +88,18 @@ const alerts = computed(() => {
 
     <button type="button" class="bf-card" style="border: 0; text-align: left; color: inherit; cursor: pointer;" @click="router.push('/accounts')">
       <div class="bf-balance__label">{{ t('availableAll') }}</div>
-      <div class="bf-balance__amount">{{ money(totalMdl) }}<span class="bf-balance__cur">MDL</span></div>
+      <div class="bf-balance__amount"><AnimatedNumber :value="totalMdl" /><span class="bf-balance__cur">MDL</span></div>
       <div class="bf-balance__meta" style="flex-wrap: wrap;">
         <span>{{ t('month') }}: <b class="bf-income">+{{ money0(month.inc) }}</b></span>
         <span><b class="bf-expense">−{{ money0(month.exp) }}</b></span>
-        <span v-if="investMdl > 0">{{ t('investments') }}: <b>{{ money0(investMdl) }}</b></span>
+        <span v-if="growth.invest > 0">{{ t('investments') }}: <b><AnimatedNumber :value="growth.invest" :decimals="0" :flash="false" /></b></span>
         <span v-if="debtMdl > 0">{{ t('debts') }}: <b>{{ money0(debtMdl) }}</b></span>
+      </div>
+      <div v-if="growth.perDay > 0" class="live" @click.stop="router.push('/investments')">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span>{{ t('liveAccrued') }}</span>
+        <b><AnimatedNumber :value="growth.accrued" :decimals="6" sign :duration="950" :flash="false" /> MDL</b>
+        <span style="margin-left: auto;">{{ t('livePerDay', money(growth.perDay)) }}</span>
       </div>
     </button>
 

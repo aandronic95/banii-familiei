@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { S, periodSums, categoryById, memberById, totalMdl, debtMdl, investMdl, monthRange } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money0, todayISO, monthShort } from '../lib/format.js'
+import DailySpend from '../components/DailySpend.vue'
 
 const router = useRouter()
 const period = ref('month')
@@ -65,6 +66,8 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
       <div class="kv"><span class="muted">{{ t('expenses') }}</span><b class="bf-expense">−{{ money0(sums.exp) }} MDL</b></div>
       <div class="kv"><span class="muted">{{ t('savedIn') }}</span><b :class="sums.inc - sums.exp >= 0 ? 'bf-income' : 'bf-expense'">{{ sums.inc - sums.exp >= 0 ? '+' : '' }}{{ money0(sums.inc - sums.exp) }} MDL</b></div>
     </div>
+
+    <DailySpend />
 
     <div v-if="cats.length" class="bf-card stack-lg">
       <div class="sec-head"><h2 class="h-sec">{{ t('byCategory') }}</h2><span class="cap">{{ money0(sums.exp) }} MDL</span></div>

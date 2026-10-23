@@ -237,3 +237,15 @@ test('cod de rezervă: amprentă, verificare și limită de încercări', { skip
   assert.ok(pinTs.validPin('0000')); assert.ok(!pinTs.validPin('123')); assert.ok(!pinTs.validPin('12a4'))
   assert.equal(pinTs.lockMinutes(4), 0); assert.equal(pinTs.lockMinutes(5), 1); assert.equal(pinTs.lockMinutes(7), 4); assert.equal(pinTs.lockMinutes(20), 60)
 })
+
+test('dobânda „vie”: cu fracțiuni de zi, egală cu eVMS la miezul nopții, oprită la scadență', async () => {
+  const { liveAccrued, perDay, accruedInterest } = await import('../src/lib/invest.js')
+  const s = Date.parse('2026-10-06'), day = 86400000
+  assert.ok(Math.abs(liveAccrued(2000, 7.45, s, null, s + 16 * day) - accruedInterest(2000, 7.45, '2026-10-06', '2026-10-22')) < 0.005)
+  const half = liveAccrued(2000, 7.45, s, null, s + 16.5 * day) - liveAccrued(2000, 7.45, s, null, s + 16 * day)
+  assert.ok(Math.abs(half - perDay(2000, 7.45) / 2) < 1e-9)
+  const end = Date.parse('2027-10-06')
+  assert.equal(liveAccrued(2000, 7.45, s, end, end + 50 * day), liveAccrued(2000, 7.45, s, end, end))
+  assert.equal(liveAccrued(2000, null, s, null, s + day), 0)
+  assert.ok(liveAccrued(2000, 7.45, s, null, s + 1000) > 0) // crește deja după o secundă
+})
