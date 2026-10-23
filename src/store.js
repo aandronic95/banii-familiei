@@ -7,6 +7,8 @@ import { cacheGet, cacheSet, cacheDel } from './lib/cache.js'
 import { toast } from './components/Toast.js'
 import { t as tr } from './lib/i18n.js'
 import { accruedInterest, liveAccrued, perDay } from './lib/invest.js'
+import { detectSubscriptions, suggestBudget } from './lib/insights.js'
+import { schedule } from './lib/loan.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -538,6 +540,96 @@ export function dailySpend(from, to, { noLoans = false } = {}) {
   return { days, byCat }
 }
 export const firstTxDate = computed(() => S.transactions.reduce((m, x) => (!m || x.date < m ? x.date : m), null))
+
+// ───────────── Averea netă în timp ─────────────
+// Pentru o zi din trecut: soldurile conturilor din tranzacții, investițiile active atunci, restul creditelor după grafic.
+// Cursul valutar e cel de azi, ca să se vadă evoluția reală, nu a cursului.
+export function netWorthAt(iso) {
+  const bal = {}
+  for (const a of S.accounts) {
+    const created = (a.created_at || '').slice(0, 10)
+    bal[a.id] = !created || created <= iso ? Number(a.opening_balance) || 0 : 0
+  }
+  for (const x of S.transactions) {
+    if (x.date > iso) continue
+    const v = Number(x.amount)
+    if (x.kind === 'income' || x.kind === 'divest') bal[x.account_id] = (bal[x.account_id] ?? 0) + v
+    else bal[x.account_id] = (bal[x.account_id] ?? 0) - v
+    if (x.kind === 'transfer' && x.to_account_id) bal[x.to_account_id] = (bal[x.to_account_id] ?? 0) + Number(x.to_amount ?? x.amount)
+  }
+  let assets = 0
+  for (const a of S.accounts) assets += toMdl(bal[a.id] ?? 0, a.currency)
+
+  let invest = 0
+  for (const i of S.investments) {
+    if (i.start_date > iso) continue
+    if (i.status === 'closed' && (!i.maturity_date || i.maturity_date <= iso)) continue
+    const end = i.maturity_date && i.maturity_date < iso ? i.maturity_date : iso
+    const v = iso >= todayISO() ? (investStatuses.value[i.id]?.value ?? Number(i.amount))
+      : Number(i.amount) + (ACCRUING.includes(i.kind) ? accruedInterest(i.amount, i.rate, i.start_date, end) : 0)
+    invest += toMdl(v, i.currency)
+  }
+
+  let debt = 0
+  for (const l of S.loans) {
+    const sch = schedule(l)
+    if (!sch.length) continue
+    if (iso >= todayISO()) { if (!l.closed) debt += toMdl(loanStatuses.value[l.id]?.remaining ?? 0, l.currency); continue }
+    const start = (l.created_at || '').slice(0, 10)
+    // creditul luat înainte de a fi introdus în aplicație contează din prima rată
+    if (sch[0].due > iso && start > iso) continue
+    let rem = Number(l.principal)
+    for (const x of sch) { if (x.due <= iso) rem = x.balance; else break }
+    if (l.closed && rem <= 0) continue
+    debt += toMdl(rem, l.currency)
+  }
+  return { assets, invest, debt, net: assets + invest - debt }
+}
+
+// Ultimele n luni: valoarea la sfârșitul fiecărei luni (luna curentă = azi)
+export function netWorthSeries(n = 12) {
+  const today = todayISO()
+  const [y, m] = today.split('-').map(Number)
+  const out = []
+  for (let k = n - 1; k >= 0; k--) {
+    const d = new Date(Date.UTC(y, m - k, 0)) // ultima zi a lunii
+    const iso = k === 0 ? today : d.toISOString().slice(0, 10)
+    out.push({ iso, month: Number(iso.slice(5, 7)) - 1, ...netWorthAt(iso) })
+  }
+  const first = S.transactions.reduce((mn, x) => (!mn || x.date < mn ? x.date : mn), null)
+  return out.filter((p) => !first || p.iso >= first.slice(0, 8) + '01' || p === out.at(-1))
+}
+
+// ───────────── Abonamente și bugete sugerate ─────────────
+export const subscriptions = computed(() => {
+  const rows = S.transactions.filter((x) => x.kind === 'expense' && x.merchant)
+    .map((x) => ({ date: x.date, amount: toMdl(x.amount, txCurrency(x)), merchant: x.merchant, account_id: x.account_id, category_id: x.category_id }))
+  const found = detectSubscriptions(rows, todayISO())
+  const recNames = S.recurring.filter((r) => r.active !== false).map((r) => r.name.toLowerCase())
+  return found.map((f) => ({ ...f, tracked: recNames.some((n) => n.includes(f.key.split(' ')[0]) || f.key.includes(n.split(' ')[0])) }))
+})
+
+// Pentru fiecare categorie de cheltuieli: media ultimelor 3 luni încheiate (doar lunile în care aveai deja date)
+export function budgetSuggestions() {
+  const today = todayISO()
+  const [y, m] = today.split('-').map(Number)
+  const first = S.transactions.reduce((mn, x) => (!mn || x.date < mn ? x.date : mn), null)
+  const months = []
+  for (let k = 3; k >= 1; k--) {
+    const d = new Date(Date.UTC(y, m - 1 - k, 1)).toISOString().slice(0, 10)
+    const [a, b] = monthRange(d)
+    if (first && b >= first) months.push([a, b])
+  }
+  if (!months.length) return { months: 0, rows: [] }
+  const rows = S.categories.filter((c) => c.kind === 'expense' && !c.archived).map((c) => {
+    const totals = months.map(([a, b]) => S.transactions
+      .filter((x) => x.kind === 'expense' && x.category_id === c.id && x.date >= a && x.date <= b)
+      .reduce((s, x) => s + toMdl(x.amount, txCurrency(x)), 0))
+    const avg = totals.reduce((s, v) => s + v, 0) / totals.length
+    return { cat: c, avg, suggested: suggestBudget(totals), current: Number(c.budget) || 0, loan: c.icon === 'bank' }
+  }).filter((r) => r.suggested > 0).sort((a, b) => b.avg - a.avg)
+  return { months: months.length, rows }
+}
 
 export const txCurrency = (t) => accountById(t.account_id)?.currency || 'MDL'
 

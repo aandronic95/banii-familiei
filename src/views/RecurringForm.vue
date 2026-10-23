@@ -26,15 +26,17 @@ function firstDate(dom) {
   return today
 }
 
+// Precompletare din „Abonamente găsite” (Rapoarte)
+const qp = isNew ? route.query : {}
 const f = reactive({
   kind: orig?.kind ?? 'expense',
-  name: orig?.name ?? '',
-  amount: orig ? String(Number(orig.amount)).replace('.', ',') : '',
-  account_id: orig?.account_id ?? activeAccounts.value.find((a) => a.type === 'card')?.id ?? activeAccounts.value[0]?.id ?? '',
-  category_id: orig?.category_id ?? '',
+  name: orig?.name ?? String(qp.name || ''),
+  amount: orig ? String(Number(orig.amount)).replace('.', ',') : qp.amount ? String(qp.amount).replace('.', ',') : '',
+  account_id: orig?.account_id ?? (qp.account && activeAccounts.value.some((a) => a.id === qp.account) ? qp.account : null) ?? activeAccounts.value.find((a) => a.type === 'card')?.id ?? activeAccounts.value[0]?.id ?? '',
+  category_id: orig?.category_id ?? String(qp.category || ''),
   member_id: orig?.member_id ?? me.value?.id ?? '',
   every_months: orig?.every_months ?? 1,
-  day_of_month: orig?.day_of_month ?? Number(todayISO().slice(8, 10)),
+  day_of_month: orig?.day_of_month ?? (Number(qp.day) || Number(todayISO().slice(8, 10))),
   next_date: orig?.next_date ?? '',
   auto_add: orig?.auto_add ?? true,
   remind: orig?.remind ?? true,

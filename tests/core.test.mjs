@@ -249,3 +249,28 @@ test('dobânda „vie”: cu fracțiuni de zi, egală cu eVMS la miezul nopții,
   assert.equal(liveAccrued(2000, null, s, null, s + day), 0)
   assert.ok(liveAccrued(2000, 7.45, s, null, s + 1000) > 0) // crește deja după o secundă
 })
+
+test('abonamente: găsește plățile lunare cu sumă constantă, ignoră restul', async () => {
+  const { detectSubscriptions, suggestBudget, merchantKey } = await import('../src/lib/insights.js')
+  assert.equal(merchantKey('NETFLIX.COM 4821'), 'netflix')
+  assert.equal(merchantKey('Orange Moldova S.A.'), 'orange moldova')
+  const tx = (date, amount, merchant) => ({ date, amount, merchant, account_id: 'a', category_id: 'c' })
+  const txs = [
+    tx('2026-06-12', 199, 'NETFLIX.COM'), tx('2026-07-12', 199, 'Netflix.com'), tx('2026-08-12', 199, 'NETFLIX.COM'), tx('2026-09-12', 209, 'NETFLIX.COM'), tx('2026-10-12', 209, 'NETFLIX.COM'),
+    tx('2026-08-03', 250, 'Starnet'), tx('2026-09-03', 250, 'Starnet'), tx('2026-10-02', 250, 'Starnet'),
+    // Linella: des, sume diferite → nu e abonament
+    tx('2026-08-01', 385, 'Linella'), tx('2026-08-04', 120, 'Linella'), tx('2026-09-02', 960, 'Linella'), tx('2026-10-05', 45, 'Linella'),
+    // s-a oprit în iunie
+    tx('2026-04-01', 99, 'Spotify'), tx('2026-05-01', 99, 'Spotify'), tx('2026-06-01', 99, 'Spotify'),
+    // doar de două ori
+    tx('2026-09-20', 500, 'Sală fitness'), tx('2026-10-20', 500, 'Sală fitness'),
+  ]
+  const s = detectSubscriptions(txs, '2026-10-23')
+  assert.deepEqual(s.map((x) => x.key), ['starnet', 'netflix']) // cele mai scumpe pe an primele
+  assert.equal(s[1].monthly, 199)
+  assert.equal(s[1].yearly, 2388)
+  assert.equal(s[0].day, 2)
+  assert.equal(suggestBudget([6200, 7100, 6850]), 6800)
+  assert.equal(suggestBudget([310, 280, 0]), 200)
+  assert.equal(suggestBudget([0, 0, 0]), 0)
+})

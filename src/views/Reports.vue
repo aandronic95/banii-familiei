@@ -5,6 +5,8 @@ import { S, periodSums, categoryById, memberById, totalMdl, debtMdl, investMdl, 
 import { t, catName } from '../lib/i18n.js'
 import { money0, todayISO, monthShort } from '../lib/format.js'
 import DailySpend from '../components/DailySpend.vue'
+import NetWorth from '../components/NetWorth.vue'
+import Subscriptions from '../components/Subscriptions.vue'
 
 const router = useRouter()
 const period = ref('month')
@@ -85,14 +87,8 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
       <div v-for="p in people" :key="p.id" class="kv"><span><span :class="p.m ? `bf-dot bf-p${p.m.color}` : 'bf-dot'" :style="p.m ? '' : 'background: var(--ink-muted)'"></span>{{ p.m?.name || '—' }}</span><b>{{ money0(p.v) }} MDL</b></div>
     </div>
 
-    <div class="bf-card stack">
-      <h2 class="h-sec">{{ t('netWorth') }}</h2>
-      <div class="kv"><span class="muted">{{ t('assets') }}</span><b>{{ money0(totalMdl) }} MDL</b></div>
-      <div v-if="investMdl" class="kv"><span class="muted">{{ t('investments') }}</span><b>{{ money0(investMdl) }} MDL</b></div>
-      <div class="kv"><span class="muted">{{ t('liabilities') }}</span><b class="bf-expense">−{{ money0(debtMdl) }} MDL</b></div>
-      <div class="hr"></div>
-      <div class="kv" style="font-size: 16px;"><span>{{ t('netWorth') }}</span><b>{{ money0(totalMdl + investMdl - debtMdl) }} MDL</b></div>
-      <p class="hint" style="margin: 0;">{{ t('assetsHint') }}</p>
-    </div>
+    <Subscriptions />
+
+    <NetWorth />
   </main>
 </template>

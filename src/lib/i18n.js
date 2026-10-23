@@ -172,6 +172,10 @@ const D = {
     fld_amount: 'Suma', fld_date: 'Data', fld_merchant: 'Descriere', fld_category_id: 'Categoria', fld_account_id: 'Contul', fld_kind: 'Tipul', fld_note: 'Notă', fld_name: 'Numele', fld_title: 'Titlul', fld_budget: 'Bugetul', fld_rate: 'Dobânda', fld_opening_balance: 'Soldul inițial', fld_due_date: 'Termenul', fld_current_value: 'Valoarea', fld_status: 'Starea', fld_archived: 'Arhivat',
     homeTitle: 'Iconiță pe ecranul telefonului', homeSub: 'Deschizi aplicația dintr-o atingere, fără să cauți botul', homeDone: 'Adăugată', homeAdded: 'Iconița a fost adăugată',
     bigTitle: 'Cheltuială mare', bigSub: 'Te anunț când altcineva din familie cheltuie peste suma asta (MDL)', bigPh: 'oprit', bigOn: (a) => `Te anunț la cheltuieli de peste ${a} MDL`, bigOff: 'Avertizarea pentru cheltuieli mari e oprită',
+    nwNow: 'Acum', nwVsMonth: 'Față de luna trecută', nwVsStart: (n) => `În ${n} luni`, nwHint: 'Conturi + investiții − credite. Lunile trecute sunt calculate din tranzacții, la cursul de azi.',
+    subsTitle: 'Abonamente găsite', subsEmpty: 'Încă nu văd plăți lunare care se repetă. Apar după 3 luni cu aceeași plată.', subsLast: (d, n) => `ultima: ${d} · de ${n} ori`, subsTrack: 'Adaugă la plăți recurente', subsTracked: 'e în plăți recurente', yearShort: 'an',
+    sugTitle: 'Bugete sugerate', sugSub: 'Din cât ați cheltuit de fapt în ultimele luni', sugBasis: (n) => `Media pe ${n === 1 ? 'ultima lună încheiată' : `ultimele ${n} luni încheiate`}, rotunjită în sus. Bifează ce vrei să aplici.`,
+    sugAvg: (a) => `media ${a} MDL pe lună`, sugLoan: 'rate la credit', sugApply: (n) => n ? `Aplică ${n} ${n === 1 ? 'buget' : 'bugete'}` : 'Alege ce aplici', sugApplied: (n) => `Am setat ${n} ${n === 1 ? 'buget' : 'bugete'}`, sugEmpty: 'Încă nu sunt destule date: e nevoie de cel puțin o lună încheiată cu cheltuieli.',
     adult: 'Adult', child: 'Copil', color: 'Culoare', bunuri: 'Bunuri', bunuriSub: 'Casă, mașină, pentru avere netă',
   },
   ru: {
@@ -308,6 +312,10 @@ const D = {
     fld_amount: 'Сумма', fld_date: 'Дата', fld_merchant: 'Описание', fld_category_id: 'Категория', fld_account_id: 'Счёт', fld_kind: 'Тип', fld_note: 'Заметка', fld_name: 'Название', fld_title: 'Заголовок', fld_budget: 'Бюджет', fld_rate: 'Ставка', fld_opening_balance: 'Начальный остаток', fld_due_date: 'Срок', fld_current_value: 'Стоимость', fld_status: 'Статус', fld_archived: 'В архиве',
     homeTitle: 'Иконка на экране телефона', homeSub: 'Открывайте приложение одним касанием, без поиска бота', homeDone: 'Добавлена', homeAdded: 'Иконка добавлена',
     bigTitle: 'Крупный расход', bigSub: 'Сообщу, когда кто-то из семьи потратит больше этой суммы (MDL)', bigPh: 'выкл.', bigOn: (a) => `Сообщу о расходах больше ${a} MDL`, bigOff: 'Уведомления о крупных расходах выключены',
+    nwNow: 'Сейчас', nwVsMonth: 'К прошлому месяцу', nwVsStart: (n) => `За ${n} мес.`, nwHint: 'Счета + инвестиции − кредиты. Прошлые месяцы считаются по операциям, по сегодняшнему курсу.',
+    subsTitle: 'Найденные подписки', subsEmpty: 'Пока не вижу повторяющихся ежемесячных платежей. Они появятся после 3 месяцев.', subsLast: (d, n) => `последний: ${d} · ${n} раз`, subsTrack: 'Добавить в регулярные платежи', subsTracked: 'уже в регулярных', yearShort: 'год',
+    sugTitle: 'Предложенные бюджеты', sugSub: 'По тому, сколько вы реально тратили', sugBasis: (n) => `Среднее за ${n === 1 ? 'последний полный месяц' : `последние ${n} полных месяца`}, с округлением вверх. Отметьте, что применить.`,
+    sugAvg: (a) => `в среднем ${a} MDL в месяц`, sugLoan: 'платежи по кредиту', sugApply: (n) => n ? `Применить (${n})` : 'Выберите, что применить', sugApplied: (n) => `Установлено бюджетов: ${n}`, sugEmpty: 'Пока мало данных: нужен хотя бы один полный месяц с расходами.',
     adult: 'Взрослый', child: 'Ребёнок', color: 'Цвет', bunuri: 'Имущество', bunuriSub: 'Дом, машина — для чистых активов',
   },
 }
