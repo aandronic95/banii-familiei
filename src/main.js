@@ -32,6 +32,7 @@ const routes = [
   { path: '/import', name: 'import', component: () => import('./views/Import.vue'), meta: { form: true } },
   { path: '/apple-pay', name: 'applePay', component: () => import('./views/ApplePay.vue') },
   { path: '/family', name: 'family', component: () => import('./views/Family.vue') },
+  { path: '/templates', name: 'templates', component: () => import('./views/Templates.vue') },
   { path: '/history', name: 'history', component: () => import('./views/History.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]

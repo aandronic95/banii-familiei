@@ -32,11 +32,15 @@ export type Quick = {
   isFuel: boolean;
   cash: boolean;
   accountWord: string | null;
+  tags: string[];
 };
 
 export function parseQuick(input: string): Quick | null {
   let text = String(input ?? "").trim();
   if (!text || text.startsWith("/")) return null;
+  // Etichete: „benzină 900 #vacanță” → tags ["vacanță"]
+  const tags = [...new Set([...text.matchAll(/#([\p{L}\p{N}_-]{1,24})/gu)].map((x) => x[1].toLowerCase()))].slice(0, 8);
+  text = text.replace(/#[\p{L}\p{N}_-]+/gu, " ").replace(/\s+/g, " ").trim();
   let kind: "expense" | "income" = "expense";
   if (/^\+/.test(text)) { kind = "income"; text = text.slice(1).trim(); }
   if (/^-/.test(text)) text = text.slice(1).trim();
@@ -67,7 +71,7 @@ export function parseQuick(input: string): Quick | null {
   if (!categoryIcon && kind === "expense") categoryIcon = guessCategoryIcon(descWords.join(" "));
   if (categoryIcon === "car" && !isFuel && /lukoil|petrom|rompetrol|bemol|tirex|avante/.test(norm(descWords.join(" ")))) isFuel = true;
   const description = descWords.join(" ").replace(/^./, (c) => c.toUpperCase()) || null;
-  return { kind, amount, currency, description, categoryIcon, isFuel, cash, accountWord: accountWords.join(" ") || null };
+  return { kind, amount, currency, description, categoryIcon, isFuel, cash, accountWord: accountWords.join(" ") || null, tags };
 }
 
 // Contul: cash dacă s-a scris „cash”; altfel un card numit în mesaj; altfel primul card al persoanei

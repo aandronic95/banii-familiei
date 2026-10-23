@@ -11,6 +11,7 @@ const route = useRoute()
 const router = useRouter()
 const accountId = route.query.account || ''
 const categoryId = route.query.category || ''
+const tag = route.query.tag || ''
 const acc = accountId ? accountById(accountId) : null
 const cat = categoryId ? categoryById(categoryId) : null
 const who = ref('')
@@ -22,8 +23,9 @@ const list = computed(() => {
   return S.transactions
     .filter((x) => !accountId || x.account_id === accountId || x.to_account_id === accountId)
     .filter((x) => !categoryId || x.category_id === categoryId)
+    .filter((x) => !tag || (x.tags || []).includes(tag))
     .filter((x) => !who.value || x.member_id === who.value)
-    .filter((x) => !s || [x.merchant, x.note, catName(categoryById(x.category_id))].some((v) => (v || '').toLowerCase().includes(s)))
+    .filter((x) => !s || [x.merchant, x.note, catName(categoryById(x.category_id)), ...(x.tags || []).map((g) => '#' + g)].some((v) => (v || '').toLowerCase().includes(s)))
     .sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at))
 })
 const groups = computed(() => {
@@ -42,7 +44,7 @@ const groups = computed(() => {
 <template>
   <main class="page">
     <div class="sec-head">
-      <h1 class="h-title">{{ acc ? acc.name : cat ? catName(cat) : t('transactions') }}</h1>
+      <h1 class="h-title">{{ acc ? acc.name : cat ? catName(cat) : tag ? '#' + tag : t('transactions') }}</h1>
       <button v-if="acc" type="button" class="bf-btn bf-btn--secondary" style="min-height: 40px;" @click="router.push('/account/' + acc.id)">{{ t('edit') }}</button>
     </div>
 

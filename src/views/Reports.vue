@@ -7,6 +7,7 @@ import { money0, todayISO, monthShort } from '../lib/format.js'
 import DailySpend from '../components/DailySpend.vue'
 import NetWorth from '../components/NetWorth.vue'
 import Subscriptions from '../components/Subscriptions.vue'
+import Projects from '../components/Projects.vue'
 
 const router = useRouter()
 const period = ref('month')
@@ -86,6 +87,8 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
       </div>
       <div v-for="p in people" :key="p.id" class="kv"><span><span :class="p.m ? `bf-dot bf-p${p.m.color}` : 'bf-dot'" :style="p.m ? '' : 'background: var(--ink-muted)'"></span>{{ p.m?.name || '—' }}</span><b>{{ money0(p.v) }} MDL</b></div>
     </div>
+
+    <Projects />
 
     <Subscriptions />
 

@@ -28,6 +28,7 @@ export const S = reactive({
   recurring: [],
   debts: [],
   goals: [],
+  templates: [],
   rates: { MDL: 1 },
   rateDates: {},
   offline: false,   // lucrăm din copia locală, fără server
@@ -37,11 +38,11 @@ export const S = reactive({
 
 const TABLES = {
   accounts: 'accounts', categories: 'categories', transactions: 'transactions', loans: 'loans',
-  loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments', recurring: 'recurring', debts: 'debts', goals: 'goals',
+  loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments', recurring: 'recurring', debts: 'debts', goals: 'goals', templates: 'templates',
 }
 
 // ───────────── Copia locală și coada offline ─────────────
-const DATA_KEYS = ['family', 'members', 'accounts', 'categories', 'transactions', 'loans', 'loanPayments', 'cars', 'carEvents', 'investments', 'recurring', 'debts', 'goals']
+const DATA_KEYS = ['family', 'members', 'accounts', 'categories', 'transactions', 'loans', 'loanPayments', 'cars', 'carEvents', 'investments', 'recurring', 'debts', 'goals', 'templates']
 const snapKey = () => 'snap:' + S.tgId
 const queueKey = () => 'queue:' + S.tgId
 let queue = []
@@ -207,7 +208,7 @@ async function fetchAll(table, order = 'id') {
 }
 
 export async function loadAll() {
-  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, rates] = await Promise.all([
+  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, rates] = await Promise.all([
     supabase.from('families').select('*').limit(1).single(),
     fetchAll('members', 'created_at'),
     fetchAll('accounts', 'sort'),
@@ -221,11 +222,12 @@ export async function loadAll() {
     fetchAll('recurring', 'next_date'),
     fetchAll('debts', 'created_at'),
     fetchAll('goals', 'created_at'),
+    fetchAll('templates', 'sort').catch(() => []),
     supabase.from('rates').select('*').order('date', { ascending: false }).limit(20),
   ])
   if (fam.error) throw fam.error
   lastLoad = Date.now()
-  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals })
+  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates })
   for (const r of rates.data || []) {
     if (!S.rateDates[r.currency]) { S.rates[r.currency] = Number(r.rate); S.rateDates[r.currency] = r.date }
   }
@@ -307,7 +309,7 @@ function maybeAlert(rows) {
 // Ce se poate „Anula” după ștergere (fără rânduri copil care s-ar pierde în cascadă)
 const UNDOABLE = ['transactions', 'car_events', 'debts', 'goals', 'recurring', 'investments']
 
-export async function remove(table, id, { onFinal } = {}) {
+export async function remove(table, id, { onFinal, silent = false } = {}) {
   const key = TABLES[table]
   const copy = S[key].find((x) => x.id === id)
   const pendingInsert = queue.findIndex((x) => x.op === 'insert' && x.table === table && x.row.id === id)
@@ -325,7 +327,7 @@ export async function remove(table, id, { onFinal } = {}) {
     }
   }
   removeLocal(key, id)
-  if (copy && UNDOABLE.includes(table)) {
+  if (copy && UNDOABLE.includes(table) && !silent) {
     toast(tr('deletedOne'), { action: tr('undo'), ms: 6000, fn: () => restoreRow(table, copy).catch((e) => toast(tr('error', e))), onTimeout: onFinal })
   } else onFinal?.()
 }
@@ -629,6 +631,77 @@ export function budgetSuggestions() {
     return { cat: c, avg, suggested: suggestBudget(totals), current: Number(c.budget) || 0, loan: c.icon === 'bank' }
   }).filter((r) => r.suggested > 0).sort((a, b) => b.avg - a.avg)
   return { months: months.length, rows }
+}
+
+// ───────────── Etichete, bon împărțit, șabloane ─────────────
+// „#Vacanță la mare” → „vacanță-la-mare”
+export function normTag(s) {
+  return String(s || '').trim().replace(/^#+/, '').toLowerCase().replace(/\s+/g, '-').replace(/[^\p{L}\p{N}_-]/gu, '').slice(0, 24)
+}
+export const tagStats = computed(() => {
+  const o = {}
+  for (const x of S.transactions) {
+    for (const tg of x.tags || []) {
+      const r = (o[tg] ??= { tag: tg, exp: 0, inc: 0, count: 0, from: x.date, to: x.date })
+      const v = toMdl(x.amount, txCurrency(x))
+      if (x.kind === 'expense') r.exp += v
+      if (x.kind === 'income') r.inc += v
+      r.count++
+      if (x.date < r.from) r.from = x.date
+      if (x.date > r.to) r.to = x.date
+    }
+  }
+  return Object.values(o).sort((a, b) => b.to.localeCompare(a.to) || b.exp - a.exp)
+})
+
+// Un bon cu mai multe categorii: rânduri separate, legate prin split_id
+export async function saveSplit(base, parts) {
+  const split_id = base.split_id || uuid()
+  const saved = []
+  for (const p of parts) saved.push(await save('transactions', { ...base, ...p, split_id }))
+  return saved
+}
+export const splitSiblings = (x) => (x?.split_id ? S.transactions.filter((y) => y.split_id === x.split_id && y.id !== x.id) : [])
+
+// Adaugă o tranzacție dintr-un șablon, cu data de azi
+export async function addFromTemplate(tp) {
+  return save('transactions', {
+    kind: tp.kind, amount: Number(tp.amount), account_id: tp.account_id, category_id: tp.category_id || null,
+    member_id: tp.member_id || me.value?.id || null, merchant: tp.merchant || tp.name, date: todayISO(),
+    car_id: tp.car_id || null, car_kind: tp.car_id ? tp.car_kind || 'fuel' : null, tags: tp.tags || [], note: null,
+  })
+}
+
+// Costul mașinii: tot ce e legat de ea (alimentări, service, asigurări) împărțit la km parcurși
+export function carCost(carId, months = 12) {
+  const today = todayISO()
+  const from = monthsBack(today, months)
+  const txs = S.transactions.filter((x) => x.car_id === carId && x.kind === 'expense' && x.date >= from && x.date <= today)
+  const parts = { fuel: 0, service: 0, other: 0 }
+  for (const x of txs) parts[x.car_kind === 'fuel' ? 'fuel' : x.car_kind === 'service' ? 'service' : 'other'] += toMdl(x.amount, txCurrency(x))
+  const total = parts.fuel + parts.service + parts.other
+  // km parcurși: ultimul kilometraj din perioadă − cel de la începutul ei
+  // (ultima citire de dinainte; altfel kilometrajul de la adăugarea mașinii, dacă a fost adăugată în perioadă; altfel prima citire)
+  const reads = S.transactions.filter((x) => x.car_id === carId && x.odometer).map((x) => ({ d: x.date, km: Number(x.odometer) }))
+  const car = S.cars.find((c) => c.id === carId)
+  const inside = reads.filter((r) => r.d >= from && r.d <= today)
+  const before = reads.filter((r) => r.d < from).sort((a, b) => b.km - a.km)[0]
+  let km = 0
+  if (inside.length) {
+    const end = Math.max(...inside.map((r) => r.km))
+    const addedInside = car?.odometer_start && (car.created_at || '').slice(0, 10) >= from
+    const start = before ? before.km : addedInside ? Number(car.odometer_start) : Math.min(...inside.map((r) => r.km))
+    km = end - start
+  }
+  const first = txs.reduce((m, x) => (!m || x.date < m ? x.date : m), null)
+  const spanDays = first ? Math.max(30, (Date.parse(today) - Date.parse(first)) / 86400000 + 1) : 0
+  return {
+    total, parts, km: Math.max(0, km),
+    perKm: km > 100 ? total / km : null,
+    perMonth: spanDays ? (total / spanDays) * 30.44 : 0,
+    perYear: spanDays ? (total / spanDays) * 365 : 0,
+    kmPerMonth: spanDays && km > 0 ? (km / spanDays) * 30.44 : 0,
+  }
 }
 
 export const txCurrency = (t) => accountById(t.account_id)?.currency || 'MDL'

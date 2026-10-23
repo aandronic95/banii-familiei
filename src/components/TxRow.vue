@@ -35,6 +35,8 @@ const info = computed(() => {
   }
   if (x.car_kind === 'fuel') { icon = 'fuel'; if (x.fuel_liters) sub.push(`${String(x.fuel_liters).replace('.', ',')} L`) }
   if (x.receipt_path) sub.push(t('bon'))
+  if (x.split_id) sub.push(t('splitShort'))
+  for (const g of x.tags || []) sub.push('#' + g)
   const sign = x.kind === 'income' || x.kind === 'divest' ? '+' : x.kind === 'expense' || x.kind === 'invest' ? '−' : ''
   return {
     title, icon, sub: sub.join(' · '), dot: mem ? `bf-dot bf-p${mem.color}` : null,

@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl } from '../store.js'
+import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { parseAmount, todayISO, money, isExpression } from '../lib/format.js'
 import { confirmDialog, haptic } from '../lib/telegram.js'
@@ -38,7 +38,32 @@ const f = reactive({
   odometer: orig?.odometer ?? '',
   full_tank: orig?.full_tank ?? true,
   investment_id: orig?.investment_id ?? route.query.investment ?? null,
+  tags: orig?.tags ? [...orig.tags] : route.query.tag ? [normTag(route.query.tag)] : [],
 })
+
+// Etichete: #vacanță, #renovare — se adaugă cu Enter, virgulă sau spațiu
+const tagInput = ref('')
+const tagSuggest = computed(() => tagStats.value.map((x) => x.tag).filter((x) => !f.tags.includes(x)).slice(0, 6))
+function addTag(v) {
+  const n = normTag(v)
+  if (n && !f.tags.includes(n) && f.tags.length < 8) f.tags.push(n)
+  tagInput.value = ''
+}
+function onTagKey(e) { if (['Enter', ',', ' '].includes(e.key)) { e.preventDefault(); addTag(tagInput.value) } }
+
+// Bon împărțit pe categorii: restul rămâne pe categoria aleasă sus
+const parts = ref([])
+const canSplit = computed(() => isNew && f.kind === 'expense')
+const partsSum = computed(() => parts.value.reduce((sum, p) => sum + (parseAmount(p.amount) || 0), 0))
+const rest = computed(() => Math.round(((parseAmount(f.amount) || 0) - partsSum.value) * 100) / 100)
+function addPart() { parts.value.push({ category_id: '', amount: '' }) }
+const siblings = computed(() => splitSiblings(orig))
+
+// Salvează și ca șablon (adăugare dintr-o atingere de pe Acasă)
+const asTemplate = ref(false)
+const tplName = computed(() => (f.merchant.trim() || catName(categoryById(f.category_id)) || t(f.kind)).slice(0, 40))
+// O poză de bon poate fi folosită de mai multe rânduri (bon împărțit): o ștergem doar dacă nu mai e folosită
+const receiptUsedElsewhere = (path, exceptId) => S.transactions.some((x) => x.receipt_path === path && x.id !== exceptId)
 const busy = ref(false)
 const err = ref('')
 const isInvestMove = f.kind === 'invest' || f.kind === 'divest'
@@ -120,10 +145,26 @@ async function submit() {
       odometer: isCar.value && f.odometer !== '' ? parseInt(String(f.odometer).replace(/\D/g, '')) || null : null,
       full_tank: isCar.value && f.car_kind === 'fuel' ? !!f.full_tank : null,
       investment_id: f.kind === 'transfer' ? null : f.investment_id || null,
+      tags: f.kind === 'transfer' ? [] : f.tags,
     }
-    if (orig?.receipt_path && orig.receipt_path !== row.receipt_path) supabase.storage.from('receipts').remove([orig.receipt_path])
-    const saved = await save('transactions', row)
-    haptic('success'); if (!saved._pending) toast(t('saved')); router.back()
+    if (parts.value.length) {
+      if (parts.value.some((p) => !(parseAmount(p.amount) > 0) || !p.category_id)) { err.value = t('splitPartBad'); return }
+      if (!(rest.value > 0)) { err.value = t('splitRestBad'); return }
+    }
+    if (orig?.receipt_path && orig.receipt_path !== row.receipt_path && !receiptUsedElsewhere(orig.receipt_path, orig.id)) supabase.storage.from('receipts').remove([orig.receipt_path])
+    let saved
+    if (parts.value.length) {
+      const carless = { car_id: null, car_kind: null, fuel_liters: null, odometer: null, full_tank: null }
+      const list = await saveSplit({ ...row, amount: rest.value }, [{}, ...parts.value.map((p) => ({ ...carless, category_id: p.category_id, amount: parseAmount(p.amount) }))])
+      saved = list[0]
+    } else saved = await save('transactions', row)
+    if (asTemplate.value && !parts.value.length) {
+      await save('templates', {
+        name: tplName.value, kind: f.kind, amount: row.amount, account_id: row.account_id, category_id: row.category_id, member_id: row.member_id,
+        merchant: row.merchant, car_id: row.car_id, car_kind: row.car_kind, tags: row.tags, sort: S.templates.length + 1,
+      })
+    }
+    haptic('success'); if (!saved._pending) toast(parts.value.length ? t('splitSaved', parts.value.length + 1) : t('saved')); router.back()
   } catch (e) { console.error(e); err.value = t('error', e); haptic('error') } finally { busy.value = false }
 }
 
@@ -132,7 +173,7 @@ async function del() {
   try {
     // Poza bonului se șterge doar după ce trece timpul pentru „Anulează”
     const path = orig.receipt_path
-    await remove('transactions', orig.id, { onFinal: () => { if (path) supabase.storage.from('receipts').remove([path]) } })
+    await remove('transactions', orig.id, { onFinal: () => { if (path && !receiptUsedElsewhere(path, orig.id)) supabase.storage.from('receipts').remove([path]) } })
     router.back()
   } catch (e) { console.error(e); err.value = t('error', e) }
 }
@@ -165,8 +206,15 @@ async function del() {
       <div><b>{{ t('investmentLink') }}:</b> {{ [inv.platform, inv.name, inv.code].filter(Boolean).join(' · ') }}</div>
     </div>
 
+    <div v-if="siblings.length" class="bf-banner" style="background: var(--surface-2);">
+      <Icon name="list" />
+      <div>{{ t('splitPartOf', siblings.length + 1) }}
+        <span v-for="x in siblings" :key="x.id"> · <button type="button" class="link" style="padding: 0;" @click="router.replace('/tx/' + x.id)">{{ catName(categoryById(x.category_id)) || '—' }} {{ money(x.amount) }}</button></span>
+      </div>
+    </div>
+
     <div v-if="f.kind !== 'transfer' && !isInvestMove" class="fld">
-      <span class="lbl">{{ t('category') }}</span>
+      <span class="lbl">{{ parts.length ? t('splitMain', money(rest)) : t('category') }}</span>
       <div class="bf-chips">
         <button v-for="c in cats" :key="c.id" type="button" class="bf-chip" :class="{ 'bf-chip--on': f.category_id === c.id }" @click="f.category_id = f.category_id === c.id ? '' : c.id"><Icon :name="c.icon" :size="16" />{{ catName(c) }}</button>
       </div>
@@ -220,6 +268,35 @@ async function del() {
       <div v-if="f.kind !== 'transfer'" class="fld"><label for="shop">{{ t('merchant') }}</label><input id="shop" v-model="f.merchant" class="inp" maxlength="60"></div>
     </div>
     <div class="fld"><label for="note">{{ t('note') }}</label><input id="note" v-model="f.note" class="inp" :placeholder="t('optional')" maxlength="200"></div>
+
+    <div v-if="f.kind !== 'transfer'" class="fld">
+      <label for="tagin">{{ t('tags') }}</label>
+      <div class="tagbox">
+        <button v-for="(tg, i) in f.tags" :key="tg" type="button" class="bf-chip bf-chip--on" :aria-label="t('tagRemove', tg)" @click="f.tags.splice(i, 1)">#{{ tg }} ×</button>
+        <input id="tagin" v-model="tagInput" class="tagbox__in" :placeholder="f.tags.length ? '' : t('tagsPh')" enterkeyhint="done" autocomplete="off" maxlength="24" @keydown="onTagKey" @blur="tagInput && addTag(tagInput)">
+      </div>
+      <div v-if="tagSuggest.length" class="bf-chips" style="margin-top: 6px;">
+        <button v-for="tg in tagSuggest" :key="tg" type="button" class="bf-chip" style="min-height: 30px; font-size: 13px;" @click="addTag(tg)">#{{ tg }}</button>
+      </div>
+    </div>
+
+    <div v-if="canSplit" class="stack">
+      <div v-for="(p, i) in parts" :key="i" class="split-row">
+        <select v-model="p.category_id" class="inp" :aria-label="t('category')">
+          <option value="" disabled>{{ t('category') }}</option>
+          <option v-for="c in cats" :key="c.id" :value="c.id">{{ catName(c) }}</option>
+        </select>
+        <input v-model="p.amount" class="inp" inputmode="decimal" :placeholder="t('amount')" style="text-align: right;">
+        <button type="button" class="amt-op" :aria-label="t('delete')" @click="parts.splice(i, 1)">×</button>
+      </div>
+      <button type="button" class="link" style="align-self: flex-start; padding: 0;" :disabled="!(parseAmount(f.amount) > 0)" @click="addPart">+ {{ parts.length ? t('splitAddMore') : t('splitAdd') }}</button>
+      <p v-if="parts.length" class="hint" style="margin: 0;" :class="{ err: rest <= 0 }">{{ t('splitHint', money(partsSum), money(rest)) }}</p>
+    </div>
+
+    <label v-if="isNew && !parts.length && (f.kind === 'expense' || f.kind === 'income') && !isInvestMove" class="bf-row bf-list" for="tpl">
+      <div class="bf-row__body"><div class="bf-row__title">{{ t('tplSave') }}</div><div class="bf-row__sub">{{ t('tplSaveSub', tplName) }}</div></div>
+      <input id="tpl" v-model="asTemplate" type="checkbox" class="sw">
+    </label>
 
     <div v-if="f.kind !== 'transfer'" class="stack">
       <img v-if="receiptPreview" :src="receiptPreview" class="receipt-img" :alt="t('receipt')">

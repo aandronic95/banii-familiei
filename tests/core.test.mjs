@@ -159,6 +159,8 @@ test('mesaj la bot: se înțelege suma, tipul, contul și categoria', { skip: !q
   assert.equal(q.amount, 20); assert.equal(q.currency, 'EUR')
   q = p('farmacie 120 lei')
   assert.equal(q.amount, 120); assert.equal(q.currency, 'MDL'); assert.equal(q.categoryIcon, 'heart')
+  q = p('benzină 900 #vacanta-mare #Drum')
+  assert.equal(q.amount, 900); assert.deepEqual(q.tags, ['vacanta-mare', 'drum']); assert.equal(q.description, 'Benzină')
   assert.equal(p('salut'), null)
   assert.equal(p('/start'), null)
   const accs = [

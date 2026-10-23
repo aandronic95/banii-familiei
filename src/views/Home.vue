@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, isOwner, totalMdl, debtMdl, growthAt, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
+import { S, me, isOwner, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
@@ -9,6 +9,7 @@ import BudgetBar from '../components/BudgetBar.vue'
 import Icon from '../components/Icon.vue'
 import { privacy, togglePrivacy } from '../lib/privacy.js'
 import { haptic } from '../lib/telegram.js'
+import { toast } from '../components/Toast.js'
 import AnimatedNumber from '../components/AnimatedNumber.vue'
 import { nowMs } from '../lib/live.js'
 
@@ -46,6 +47,20 @@ const quick = computed(() => {
     .sort((a, b) => (count[b.id] || 0) - (count[a.id] || 0) || a.sort - b.sort)
     .slice(0, 4)
 })
+
+// Șabloane: o atingere = tranzacția e adăugată azi (cu „Anulează”)
+const templates = computed(() => [...S.templates].sort((a, b) => a.sort - b.sort))
+const tplBusy = ref('')
+async function useTemplate(tp) {
+  if (tplBusy.value) return
+  tplBusy.value = tp.id
+  try {
+    const x = await addFromTemplate(tp)
+    haptic('success')
+    const cur = accountById(tp.account_id)?.currency || 'MDL'
+    toast(t('tplAdded', tp.name, money(tp.amount) + ' ' + cur), { action: t('undo'), fn: () => remove('transactions', x.id, { silent: true }) })
+  } catch (e) { console.error(e); toast(t('error', e)) } finally { tplBusy.value = '' }
+}
 
 // Avertizări: rate în următoarele 5 zile și termene la mașină în 14 zile
 const alerts = computed(() => {
@@ -124,6 +139,16 @@ const alerts = computed(() => {
         <button v-for="c in quick" :key="c.id" type="button" class="quick__btn" @click="router.push({ path: '/tx/new', query: { category: c.id } })">
           <span class="bf-row__icon"><Icon :name="c.icon" /></span>
           <span class="quick__label">{{ catName(c) }}</span>
+        </button>
+      </div>
+    </section>
+
+    <section v-if="templates.length" class="stack" :aria-label="t('tplTitle')">
+      <div class="sec-head"><h2 class="h-sec" style="font-size: 15px;">{{ t('tplTitle') }}</h2><button class="link" @click="router.push('/templates')">{{ t('edit') }}</button></div>
+      <div class="tpl-row">
+        <button v-for="tp in templates" :key="tp.id" type="button" class="tpl" :disabled="tplBusy === tp.id" @click="useTemplate(tp)">
+          <span class="bf-row__icon"><Icon :name="categoryById(tp.category_id)?.icon || 'bolt'" :size="16" /></span>
+          {{ tp.name }} <small>{{ money0(tp.amount) }}</small>
         </button>
       </div>
     </section>

@@ -64,7 +64,7 @@ async function saveQuick(member: { id: string; family_id: string; user_id: strin
   const { data: tx, error } = await db.from("transactions").insert({
     family_id: member.family_id, kind: q.kind, amount: q.amount, account_id: account.id, category_id: categoryId,
     member_id: member.id, date: todayLocal(), merchant: q.description, note: "Telegram", created_by: member.user_id,
-    car_id: carId, car_kind: carKind,
+    car_id: carId, car_kind: carKind, tags: q.tags,
   }).select("id").single();
   if (error || !tx) return { error: "save" as const };
   if (q.kind === "expense") await bigSpendAlert(db, BOT_TOKEN, APP_URL, tx.id).catch(() => 0);
