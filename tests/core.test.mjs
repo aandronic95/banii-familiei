@@ -288,6 +288,8 @@ test('cod QR de pe bonul fiscal (MEV)', async () => {
   assert.equal(c.amount, 150)
   assert.equal(parseFiscalQr('salut'), null)
   assert.equal(parseFiscalQr(''), null)
+  const h = parseFiscalQr('https://mev.sfs.md/receipt-verifier/F5EBCB96BE4D58BA606648B079C6DAFE')
+  assert.deepEqual([h.ref, h.needsPage, h.amount], ['MEV:F5EBCB96BE4D58BA606648B079C6DAFE', true, null])
 })
 
 test('restaurare din backup: nu dublează, potrivește conturile și categoriile după nume', async () => {
@@ -357,4 +359,31 @@ test('plata recurentă care dublează rata creditului e recunoscută (aplicație
   assert.equal(js.loanForRecurring({ ...rec, kind: 'income' }, [l]), null)
   assert.equal(js.loanForRecurring(rec, [{ ...l, closed: true }]), null)
   if (loanTs) assert.equal(loanTs.loanForRecurring(rec, [l])?.id, 'L')
+})
+
+test('textul bonului fiscal: toate pozițiile, totalul, data', async () => {
+  const { parseReceiptText, itemsNote } = await import('../src/lib/fiscalText.js')
+  const a = parseReceiptText(`"LINELLA" S.R.L.
+COD FISCAL: 1003600012345
+mun. Chișinău, str. Ion Creangă 10
+Lapte Lapte 2.5% 1L
+2.000 x 18.90 = 37.80 A
+Pâine albă feliată 9.50 A
+Ouă C1 10 buc 10 x 2.25 = 22.50 A
+Banane 1.235 x 29.90 36.93 A
+TOTAL 106.73
+TVA A=20.00% 17.79
+CARD 106.73
+Bon fiscal nr. 31
+21.10.2026 14:22:05`)
+  assert.equal(a.merchant, 'LINELLA')
+  assert.equal(a.date, '2026-10-21')
+  assert.equal(a.total, 106.73)
+  assert.deepEqual(a.items.map((x) => [x.name, x.qty, x.sum]), [['Lapte Lapte 2.5% 1L', 2, 37.8], ['Pâine albă feliată', 1, 9.5], ['Ouă C1 10 buc', 10, 22.5], ['Banane', 1.235, 36.93]])
+  assert.equal(a.matches, true)
+  assert.equal(itemsNote(a.items), 'Lapte Lapte 2.5% 1L ×2, Pâine albă feliată, Ouă C1 10 buc ×10, Banane ×1,235')
+  // format rusesc, sume cu virgulă
+  const b = parseReceiptText(`ООО "Фуршет"\nХлеб\n1 x 8,00 8,00\nМолоко 2 х 17,50 = 35,00\nИТОГО 43,00\n2026-10-20`)
+  assert.equal(b.total, 43); assert.equal(b.items.length, 2); assert.equal(b.date, '2026-10-20'); assert.equal(b.matches, true)
+  assert.equal(parseReceiptText('').items.length, 0)
 })

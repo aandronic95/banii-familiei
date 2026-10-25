@@ -6,6 +6,7 @@ import { t, catName } from '../lib/i18n.js'
 import { parseAmount, todayISO, money, isExpression, dateShort } from '../lib/format.js'
 import { confirmDialog, haptic, qrSupported, scanQr, openLink } from '../lib/telegram.js'
 import { parseFiscalQr } from '../lib/fiscal.js'
+import { parseReceiptText, itemsNote } from '../lib/fiscalText.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
 import { supabase } from '../lib/supabase.js'
@@ -41,10 +42,12 @@ const f = reactive({
   investment_id: orig?.investment_id ?? route.query.investment ?? null,
   tags: orig?.tags ? [...orig.tags] : route.query.tag ? [normTag(route.query.tag)] : [],
   fiscal_ref: orig?.fiscal_ref ?? null,
+  items: Array.isArray(orig?.items) ? orig.items.map((x) => ({ ...x })) : [],
 })
 
 // Codul QR de pe bonul fiscal: suma și data exacte; magazinul îl învățăm din bonurile anterioare de la același aparat
-const qr = ref(null) // { url, dup, learned }
+const qr = ref(null) // { url, dup, learned, needsPage }
+const DRAFT = 'bf-tx-draft'
 async function scanReceiptQr() {
   const text = await scanQr(t('qrHint'), (x) => !!parseFiscalQr(x))
   const r = text && parseFiscalQr(text)
@@ -59,7 +62,60 @@ async function scanReceiptQr() {
     if (!f.merchant && prev.merchant) f.merchant = prev.merchant
     if (!f.category_id && prev.category_id && cats.value.some((c) => c.id === prev.category_id)) f.category_id = prev.category_id
   }
-  qr.value = { url: r.url, dup, learned: !!prev, amount: r.amount, date: r.date }
+  qr.value = { url: r.url, dup, learned: !!prev, amount: r.amount, date: r.date, needsPage: !!r.needsPage }
+  if (r.needsPage && !dup) openReceiptPage()
+  setTimeout(() => document.getElementById('rc-box')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50)
+}
+
+// Pagina bonului se deschide în browser (site-ul cere verificarea „nu sunt robot”, deci n-o putem citi direct).
+// Formularul se păstrează, ca să-l găsești la fel când revii.
+function openReceiptPage() {
+  if (!qr.value?.url) return
+  try { sessionStorage.setItem(DRAFT, JSON.stringify({ at: Date.now(), f: { ...f }, qr: qr.value })) } catch (_) {}
+  openLink(qr.value.url)
+}
+onMounted(() => {
+  if (!isNew) return
+  try {
+    const d = JSON.parse(sessionStorage.getItem(DRAFT) || 'null')
+    if (d && Date.now() - d.at < 30 * 60000) { Object.assign(f, d.f); qr.value = d.qr; setTimeout(() => document.getElementById('rc-box')?.scrollIntoView({ block: 'start' }), 300) }
+  } catch (_) {}
+})
+
+// Textul copiat de pe pagina bonului → suma, magazinul, data și toate produsele
+const pasteText = ref('')
+const parsed = ref(null)
+async function pasteFromClipboard() {
+  try {
+    const txt = await navigator.clipboard.readText()
+    if (txt) { pasteText.value = txt; applyPaste() } else toast(t('pasteEmpty'))
+  } catch (_) { toast(t('pasteManual')) }
+}
+function applyPaste() {
+  const r = parseReceiptText(pasteText.value)
+  parsed.value = r
+  if (!r.items.length && !r.total) return
+  haptic('success')
+  if (r.total) f.amount = String(r.total).replace('.', ',')
+  if (r.date) f.date = r.date
+  if (r.merchant && !f.merchant) f.merchant = r.merchant
+  f.items = r.items
+  if (r.items.length && !f.note) f.note = itemsNote(r.items)
+  // categoria după magazin, din bonurile anterioare
+  if (!f.category_id && f.merchant) {
+    const prev = [...S.transactions].filter((x) => x.merchant && x.merchant.toLowerCase() === f.merchant.toLowerCase() && x.category_id).sort((a, b) => b.date.localeCompare(a.date))[0]
+    if (prev && cats.value.some((c) => c.id === prev.category_id)) f.category_id = prev.category_id
+  }
+  try { sessionStorage.removeItem(DRAFT) } catch (_) {}
+  if (qr.value) qr.value = { ...qr.value, needsPage: false, amount: r.total, date: r.date }
+}
+const showItems = ref(false)
+const itemsSum = computed(() => Math.round(f.items.reduce((s2, x) => s2 + Number(x.sum || 0), 0) * 100) / 100)
+function dropItem(i) {
+  const x = f.items[i]
+  f.items.splice(i, 1)
+  const cur = parseAmount(f.amount)
+  if (cur && x?.sum) f.amount = String(Math.max(0, Math.round((cur - x.sum) * 100) / 100)).replace('.', ',')
 }
 
 // Etichete: #vacanță, #renovare — se adaugă cu Enter, virgulă sau spațiu
@@ -168,12 +224,14 @@ async function submit() {
       investment_id: f.kind === 'transfer' ? null : f.investment_id || null,
       tags: f.kind === 'transfer' ? [] : f.tags,
       fiscal_ref: f.kind === 'transfer' ? null : f.fiscal_ref,
+      items: f.kind === 'transfer' || !f.items.length ? null : f.items,
     }
     if (parts.value.length) {
       if (parts.value.some((p) => !(parseAmount(p.amount) > 0) || !p.category_id)) { err.value = t('splitPartBad'); return }
       if (!(rest.value > 0)) { err.value = t('splitRestBad'); return }
     }
     if (orig?.receipt_path && orig.receipt_path !== row.receipt_path && !receiptUsedElsewhere(orig.receipt_path, orig.id)) supabase.storage.from('receipts').remove([orig.receipt_path])
+    try { sessionStorage.removeItem(DRAFT) } catch (_) {}
     let saved
     if (parts.value.length) {
       const carless = { car_id: null, car_kind: null, fuel_liters: null, odometer: null, full_tank: null }
@@ -221,6 +279,44 @@ async function del() {
         <button v-for="op in ['+', '−', '×', '÷']" :key="op" type="button" class="amt-op" :aria-label="op" @click="addOp(op)">{{ op }}</button>
       </div>
       <div v-if="calcResult !== null" class="cap" style="margin-top: 6px;" aria-live="polite">= {{ money(calcResult) }} {{ acc?.currency || 'MDL' }}</div>
+    </div>
+
+    <div v-if="f.kind !== 'transfer'" id="rc-box" class="stack" style="gap: 12px;">
+    <div v-if="qr && qr.dup" class="bf-banner bf-banner--danger">
+      <Icon name="alert" /><div><b>{{ t('qrDup') }}</b> {{ dateShort(qr.dup.date) }} · {{ money(qr.dup.amount) }}</div>
+    </div>
+    <div v-else-if="qr && qr.needsPage" class="bf-card stack" style="background: var(--brand-soft);">
+      <b>{{ t('rcTitle') }}</b>
+      <ol class="rc-steps">
+        <li v-if="qr.url">{{ t('rcStep1') }} <button type="button" class="link" style="padding: 0;" @click="openReceiptPage">{{ t('rcOpen') }}</button></li>
+        <li>{{ t('rcStep2') }}</li>
+        <li>{{ t('rcStep3') }}</li>
+      </ol>
+      <button type="button" class="bf-btn bf-btn--primary bf-btn--block" @click="pasteFromClipboard"><Icon name="list" />{{ t('rcPaste') }}</button>
+      <textarea v-model="pasteText" class="inp" rows="3" :placeholder="t('rcPastePh')" @input="pasteText.length > 30 && applyPaste()"></textarea>
+      <p v-if="parsed && !parsed.items.length && !parsed.total" class="err" style="margin: 0;">{{ t('rcNothing') }}</p>
+    </div>
+    <div v-else-if="qr" class="bf-banner" style="background: var(--brand-soft);">
+      <Icon name="check" />
+      <div style="flex: 1;">
+        <div>{{ t('qrRead', qr.amount ? money(qr.amount) : '—', qr.date ? dateShort(qr.date) : '—') }}<span v-if="qr.learned"> · {{ t('qrLearned') }}</span></div>
+        <button v-if="qr.url" type="button" class="link" style="padding: 4px 0 0;" @click="openLink(qr.url)">{{ t('qrOpen') }}</button>
+      </div>
+    </div>
+
+    <div v-if="f.items.length" class="bf-card stack" style="padding: 12px 16px;">
+      <button type="button" class="kv" style="all: unset; display: flex; justify-content: space-between; cursor: pointer;" :aria-expanded="showItems" @click="showItems = !showItems">
+        <b>{{ t('rcItems', f.items.length) }}</b><span class="cap">{{ money(itemsSum) }} {{ showItems ? '▴' : '▾' }}</span>
+      </button>
+      <p v-if="parseAmount(f.amount) && Math.abs(itemsSum - parseAmount(f.amount)) > 0.05" class="hint" style="margin: 0; color: var(--warning);">{{ t('rcMismatch', money(itemsSum), money(parseAmount(f.amount))) }}</p>
+      <template v-if="showItems">
+        <div v-for="(x, i) in f.items" :key="i" class="kv" style="gap: 8px; align-items: flex-start;">
+          <span style="flex: 1; min-width: 0;">{{ x.name }}<span v-if="x.qty !== 1" class="cap" style="display: block;">{{ String(x.qty).replace('.', ',') }} × {{ money(x.price) }}</span></span>
+          <b style="white-space: nowrap;">{{ money(x.sum) }}</b>
+          <button type="button" class="link" style="padding: 0 0 0 4px;" :aria-label="t('delete')" @click="dropItem(i)">×</button>
+        </div>
+      </template>
+    </div>
     </div>
 
     <div v-if="inv" class="bf-banner" style="background: var(--brand-soft);">
@@ -329,15 +425,8 @@ async function del() {
         <button type="button" class="link" style="padding: 0;" @click="useOcr">{{ t('ocrUse') }}</button>
       </div>
       <div v-else-if="ocr.state === 'none'" class="hint">{{ t('ocrNone') }}</div>
-      <div v-if="qr" class="bf-banner" :class="{ 'bf-banner--danger': qr.dup }" :style="qr.dup ? '' : 'background: var(--brand-soft);'">
-        <Icon :name="qr.dup ? 'alert' : 'check'" />
-        <div style="flex: 1;">
-          <div v-if="qr.dup"><b>{{ t('qrDup') }}</b> {{ dateShort(qr.dup.date) }} · {{ money(qr.dup.amount) }}</div>
-          <div v-else>{{ t('qrRead', qr.amount ? money(qr.amount) : '—', qr.date ? dateShort(qr.date) : '—') }}<span v-if="qr.learned"> · {{ t('qrLearned') }}</span></div>
-          <button v-if="qr.url" type="button" class="link" style="padding: 4px 0 0;" @click="openLink(qr.url)">{{ t('qrOpen') }}</button>
-        </div>
-      </div>
       <button v-if="qrSupported() && f.kind === 'expense'" type="button" class="bf-btn bf-btn--secondary bf-btn--block" @click="scanReceiptQr"><Icon name="qr" />{{ t('qrScan') }}</button>
+      <button v-if="f.kind === 'expense' && !(qr && qr.needsPage)" type="button" class="link" style="align-self: center; padding: 0;" @click="qr = { needsPage: true, url: qr?.url || null }">{{ t('rcPasteLink') }}</button>
       <input ref="fileInput" id="rcpt" type="file" accept="image/*" capture="environment" class="file-hidden" @change="pickFile">
       <button type="button" class="bf-btn bf-btn--secondary bf-btn--block" style="height: 56px; border: 1.5px dashed var(--line);" @click="fileInput.click()">
         <Icon name="camera" />{{ receiptPreview ? t('receiptChange') : t('receipt') }}

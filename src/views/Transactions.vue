@@ -50,7 +50,7 @@ const list = computed(() => {
     .filter((x) => !F.from || x.date >= F.from)
     .filter((x) => !F.to || x.date <= F.to)
     .filter((x) => { const v = toMdl(x.amount, txCurrency(x)); return (!F.min || v >= parseAmount(F.min)) && (!F.max || v <= parseAmount(F.max)) })
-    .filter((x) => !s || [x.merchant, x.note, catName(categoryById(x.category_id)), ...(x.tags || []).map((g) => '#' + g)].some((v) => (v || '').toLowerCase().includes(s)))
+    .filter((x) => !s || [x.merchant, x.note, catName(categoryById(x.category_id)), ...(x.tags || []).map((g) => '#' + g), ...(Array.isArray(x.items) ? x.items.map((i) => i.name) : [])].some((v) => (v || '').toLowerCase().includes(s)))
     .sort((a, b) => (b.date + b.created_at).localeCompare(a.date + a.created_at))
 })
 const summary = computed(() => {

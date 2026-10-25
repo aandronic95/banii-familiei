@@ -34,7 +34,12 @@ export function parseFiscalQr(text) {
     const n = parts.filter((p) => /^\d{1,7}$/.test(p) && p !== number)
     if (n.length) amount = Number(n[0])
   }
-  if (!(amount > 0) && !date) return null
+  // Forma nouă: doar un identificator (ex. …/receipt-verifier/F5EBCB96BE4D58BA606648B079C6DAFE).
+  // Suma și produsele sunt pe pagină; le citim din textul copiat de acolo.
+  const isMev = url && /sfs\.md/i.test(url)
+  const token = isMev && parts.length === 1 && /^[0-9a-f]{16,64}$/i.test(parts[0]) ? parts[0].toUpperCase() : null
+  if (token) return { amount: null, date: null, code: null, number: null, ref: 'MEV:' + token, url, needsPage: true }
+  if (!(amount > 0) && !date) return isMev ? { amount: null, date: null, code: null, number: null, ref: null, url, needsPage: true } : null
   if (date && (date < '2015-01-01' || date > '2100-01-01')) date = null
   const ref = code ? [code, number, date].filter(Boolean).join('/') : null
   return { amount: amount > 0 ? Math.round(amount * 100) / 100 : null, date, code, number, ref, url: url && /sfs\.md/i.test(url) ? url : null }

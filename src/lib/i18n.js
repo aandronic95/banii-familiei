@@ -214,6 +214,10 @@ const D = {
     chkRecStop: 'Oprește plata recurentă', chkRecStopDel: (n) => `Oprește-o și șterge ${n === 1 ? 'dublura' : n + ' dubluri'}`, chkRecKeep: 'Sunt plăți diferite', chkRecStopped: (n) => n ? `Plata recurentă e oprită, ${n} ${n === 1 ? 'dublură ștearsă' : 'dubluri șterse'}` : 'Plata recurentă e oprită; rămâne doar creditul',
     calRecDup: (r, l) => `„${r}” e aceeași rată ca la creditul „${l}”`, calRecDupSub: 'Am scos-o din calendar și din prognoză ca să nu se numere de două ori. Oprește plata recurentă; rata rămâne la Credite.',
     recLoanWarn: (l) => `Atenție: arată ca rata creditului „${l}”, care are deja graficul lui. Nu o adăuga și aici, altfel se numără de două ori.`,
+    rcTitle: 'Bonul fiscal: ia produsele de pe pagină', rcStep1: 'Se deschide pagina bonului (dacă cere, bifează „nu sunt robot”).', rcOpen: 'Deschide din nou', rcStep2: 'Pe pagină: ține apăsat pe text → „Selectează tot” → „Copiază”.', rcStep3: 'Revino aici și apasă „Lipește textul bonului”.',
+    rcPaste: 'Lipește textul bonului', rcPastePh: 'sau lipește aici textul copiat', rcNothing: 'Nu am găsit produse sau total în text. Copiază toată pagina bonului.', rcPasteLink: 'Am textul unui bon — lipește-l',
+    pasteEmpty: 'Nu e nimic copiat. Copiază întâi textul de pe pagina bonului.', pasteManual: 'Ține apăsat în câmpul de mai jos și alege „Lipește”.',
+    rcItems: (n) => `${n} ${n === 1 ? 'produs' : 'produse'} de pe bon`, rcItemsShort: (n) => `${n} ${n === 1 ? 'produs' : 'produse'}`, rcMismatch: (a, b) => `Produsele adună ${a}, totalul e ${b} (poate o reducere sau un produs necitit).`,
     adult: 'Adult', child: 'Copil', color: 'Culoare', bunuri: 'Bunuri', bunuriSub: 'Casă, mașină, pentru avere netă',
   },
   ru: {
@@ -392,6 +396,10 @@ const D = {
     chkRecStop: 'Отключить регулярный платёж', chkRecStopDel: (n) => `Отключить и удалить дубли (${n})`, chkRecKeep: 'Это разные платежи', chkRecStopped: (n) => n ? `Регулярный платёж отключён, удалено дублей: ${n}` : 'Регулярный платёж отключён; остался только кредит',
     calRecDup: (r, l) => `«${r}» — это тот же платёж, что по кредиту «${l}»`, calRecDupSub: 'Убрали его из календаря и прогноза, чтобы не считать дважды. Отключите регулярный платёж; платёж останется в Кредитах.',
     recLoanWarn: (l) => `Внимание: похоже на платёж по кредиту «${l}», у которого уже есть график. Не добавляйте его сюда, иначе он посчитается дважды.`,
+    rcTitle: 'Фискальный чек: взять товары со страницы', rcStep1: 'Откроется страница чека (если попросит — подтвердите «я не робот»).', rcOpen: 'Открыть снова', rcStep2: 'На странице: удерживайте текст → «Выбрать всё» → «Скопировать».', rcStep3: 'Вернитесь сюда и нажмите «Вставить текст чека».',
+    rcPaste: 'Вставить текст чека', rcPastePh: 'или вставьте скопированный текст сюда', rcNothing: 'Не нашёл товаров или итога. Скопируйте всю страницу чека.', rcPasteLink: 'Есть текст чека — вставить',
+    pasteEmpty: 'Буфер пуст. Сначала скопируйте текст со страницы чека.', pasteManual: 'Удерживайте поле ниже и выберите «Вставить».',
+    rcItems: (n) => `Товаров с чека: ${n}`, rcItemsShort: (n) => `${n} тов.`, rcMismatch: (a, b) => `Товары дают ${a}, итог ${b} (возможно, скидка или товар не распознан).`,
     adult: 'Взрослый', child: 'Ребёнок', color: 'Цвет', bunuri: 'Имущество', bunuriSub: 'Дом, машина — для чистых активов',
   },
 }
