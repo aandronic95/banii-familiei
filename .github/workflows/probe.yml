@@ -5,6 +5,8 @@ on:
       url:
         description: link
         required: true
+permissions:
+  contents: write
 jobs:
   probe:
     runs-on: ubuntu-latest
@@ -21,7 +23,9 @@ jobs:
             f="out/js_$(echo "$s" | tr '/?=&' '____' | tail -c 80)"; curl -sS -L -m 30 -o "$f" "$u" || true
           done
           ls -la out
-      - uses: actions/upload-artifact@v4
-        with:
-          name: probe
-          path: out
+      - name: Salvează rezultatul într-o ramură separată
+        run: |
+          cd out
+          git init -q -b probe-out && git config user.name probe && git config user.email probe@local
+          git add -A && git commit -q -m probe
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" probe-out
