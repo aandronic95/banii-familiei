@@ -145,7 +145,7 @@ const aria = computed(() => (r.value ? r.value.bars.map((b) => `${b.label}: ${mo
       <div v-if="r.cats.length" class="stack">
         <h3 class="h-sec" style="font-size: 15px;">{{ t('dCats') }}</h3>
         <button v-for="c in r.cats" :key="c.id" type="button" style="all: unset; cursor: pointer; display: block;" @click="c.cat && router.push({ path: '/transactions', query: { category: c.id } })">
-          <div class="bf-budget__top"><span class="bf-budget__name" style="font-size: 14px;">{{ c.cat ? catName(c.cat) : '—' }}</span><span class="bf-budget__nums">{{ money(c.v) }} {{ t('perDayShort') }} · {{ c.share }}%</span></div>
+          <div class="bf-budget__top"><span class="bf-budget__name" style="font-size: 14px;">{{ c.cat ? catName(c.cat) : t('noCategory') }}</span><span class="bf-budget__nums">{{ money(c.v) }} {{ t('perDayShort') }} · {{ c.share }}%</span></div>
           <div class="bf-bar" style="height: 6px; margin-top: 6px;"><i :style="{ width: c.w + '%' }"></i></div>
         </button>
       </div>

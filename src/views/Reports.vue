@@ -40,7 +40,7 @@ const months = computed(() => {
 const cats = computed(() => {
   const rows = Object.entries(sums.value.byCat).map(([id, v]) => ({ id, v, cat: categoryById(id) })).sort((a, b) => b.v - a.v)
   const max = rows[0]?.v || 1
-  return rows.map((r) => ({ ...r, label: r.cat ? catName(r.cat) : '—', pct: Math.round((r.v / (sums.value.exp || 1)) * 100), w: Math.round((r.v / max) * 100) }))
+  return rows.map((r) => ({ ...r, label: r.cat ? catName(r.cat) : t('noCategory'), pct: Math.round((r.v / (sums.value.exp || 1)) * 100), w: Math.round((r.v / max) * 100) }))
 })
 const people = computed(() => {
   const rows = Object.entries(sums.value.byMember).map(([id, v]) => ({ id, v, m: memberById(id) })).sort((a, b) => b.v - a.v)
@@ -82,7 +82,7 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
 
     <div v-if="cats.length" class="bf-card stack-lg">
       <div class="sec-head"><h2 class="h-sec">{{ t('byCategory') }}</h2><span class="cap">{{ money0(sums.exp) }} MDL</span></div>
-      <button v-for="c in cats" :key="c.id" type="button" style="all: unset; cursor: pointer; display: block;" @click="c.cat && router.push({ path: '/transactions', query: { category: c.id } })">
+      <button v-for="c in cats" :key="c.id" type="button" style="all: unset; cursor: pointer; display: block;" @click="router.push({ path: '/transactions', query: c.cat ? { category: c.id } : { uncat: '1' } })">
         <div class="bf-budget__top"><span class="bf-budget__name" style="font-size: 14px;">{{ c.label }}</span><span class="bf-budget__nums">{{ money0(c.v) }} · {{ c.pct }}%</span></div>
         <div class="bf-bar" style="height: 6px; margin-top: 6px;"><i :style="{ width: c.w + '%' }"></i></div>
       </button>
@@ -93,7 +93,7 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
       <div role="img" :aria-label="people.map((p) => `${p.m?.name || '—'} ${Math.round(p.pct)}%`).join(', ')" style="display: flex; height: 12px; border-radius: 999px; overflow: hidden; gap: 2px;">
         <div v-for="p in people" :key="p.id" :style="{ width: p.pct + '%', background: p.m ? `var(--person-${p.m.color})` : 'var(--ink-muted)' }"></div>
       </div>
-      <div v-for="p in people" :key="p.id" class="kv"><span><span :class="p.m ? `bf-dot bf-p${p.m.color}` : 'bf-dot'" :style="p.m ? '' : 'background: var(--ink-muted)'"></span>{{ p.m?.name || '—' }}</span><b>{{ money0(p.v) }} MDL</b></div>
+      <div v-for="p in people" :key="p.id" class="kv"><span><span :class="p.m ? `bf-dot bf-p${p.m.color}` : 'bf-dot'" :style="p.m ? '' : 'background: var(--ink-muted)'"></span>{{ p.m?.name || t('common') }}</span><b>{{ money0(p.v) }} MDL</b></div>
     </div>
 
     <Projects />
