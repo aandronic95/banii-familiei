@@ -1,0 +1,27 @@
+name: Probă bon (temporar)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: link
+        required: true
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descarcă pagina bonului
+        run: |
+          mkdir out
+          curl -sS -L -m 30 -A "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)" -D out/headers.txt -o out/page.html "${{ github.event.inputs.url }}" || true
+          ls -la out; head -c 3000 out/page.html
+          # scripturile paginii (dacă datele vin prin API)
+          grep -oE 'src="[^"]+\.js[^"]*"' out/page.html | head -20 || true
+          for s in $(grep -oE 'src="[^"]+\.js[^"]*"' out/page.html | sed 's/src="//;s/"$//' | head -8); do
+            case "$s" in http*) u="$s";; /*) u="https://mev.sfs.md$s";; *) u="https://mev.sfs.md/receipt-verifier/$s";; esac
+            f="out/js_$(echo "$s" | tr '/?=&' '____' | tail -c 80)"; curl -sS -L -m 30 -o "$f" "$u" || true
+          done
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: probe
+          path: out
