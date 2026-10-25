@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      BASE: https://ecfehopapvxngnxecetg.supabase.co/functions/v1
+      BASE: https://${{ vars.SUPABASE_PROJECT_REF || (github.repository == 'aandronic95/banii-familiei' && 'ecfehopapvxngnxecetg') || 'lipseste-SUPABASE_PROJECT_REF' }}.supabase.co/functions/v1
     steps:
       - name: Trimite notificările
         run: |

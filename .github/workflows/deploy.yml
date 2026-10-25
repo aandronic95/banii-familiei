@@ -14,13 +14,60 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
-env:
-  PROJECT_REF: ecfehopapvxngnxecetg
-  BOT_USERNAME: andronicfambot
-
 jobs:
+  # 0. Setările instalării: proiectul Supabase (variabila SUPABASE_PROJECT_REF),
+  #    cheia publică a proiectului și numele botului (aflate automat din tokenuri).
+  #    Așa aceeași copie a codului merge pentru orice familie, fiecare cu baza și botul ei.
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      ref: ${{ steps.c.outputs.ref }}
+      key: ${{ steps.c.outputs.key }}
+      bot: ${{ steps.c.outputs.bot }}
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      VAR_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      VAR_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - id: c
+        name: Citește setările
+        run: |
+          ORIGINAL="aandronic95/banii-familiei"
+          REF="$VAR_REF"
+          if [ -z "$REF" ] && [ "$GITHUB_REPOSITORY" = "$ORIGINAL" ]; then REF="ecfehopapvxngnxecetg"; fi
+          if [ -z "$REF" ]; then
+            echo "::error::Lipsește variabila SUPABASE_PROJECT_REF (Settings → Secrets and variables → Actions → Variables). E codul proiectului din adresa supabase.com/dashboard/project/<cod>."
+            exit 1
+          fi
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$TELEGRAM_BOT_TOKEN" ]; then
+            echo "::error::Lipsesc secretele SUPABASE_ACCESS_TOKEN și/sau TELEGRAM_BOT_TOKEN (Settings → Secrets and variables → Actions → Secrets)."
+            exit 1
+          fi
+          # Cheia publică a proiectului (nu cea secretă!) — e făcută să stea în aplicație
+          KEY="$VAR_KEY"
+          if [ -z "$KEY" ]; then
+            KEY=$(supabase projects api-keys --project-ref "$REF" -o json 2>/dev/null \
+              | jq -r '([.[] | select(.type == "publishable")][0].api_key) // ([.[] | select(.name == "anon")][0].api_key) // empty')
+          fi
+          if [ -z "$KEY" ] && [ "$GITHUB_REPOSITORY" = "$ORIGINAL" ]; then KEY="sb_publishable__X0T3eKwVwWhl5Qylz8plg_mpT9S4Sf"; fi
+          if [ -z "$KEY" ]; then
+            echo "::error::Nu am putut afla cheia publică a proiectului $REF. Verifică SUPABASE_ACCESS_TOKEN sau pune cheia în variabila SUPABASE_PUBLISHABLE_KEY (Project Settings → API Keys → Publishable key)."
+            exit 1
+          fi
+          case "$KEY" in sb_secret_*) echo "::error::Cheia găsită e secretă, nu publică. Pune cheia publică în SUPABASE_PUBLISHABLE_KEY."; exit 1 ;; esac
+          # Numele botului, direct de la Telegram
+          BOT=$(curl -sf "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe" | jq -r '.result.username // empty')
+          if [ -z "$BOT" ]; then echo "::error::Tokenul botului nu e valid (TELEGRAM_BOT_TOKEN)."; exit 1; fi
+          echo "Proiect Supabase: $REF · bot: @$BOT · cheie publică: ${KEY:0:16}…"
+          { echo "ref=$REF"; echo "key=$KEY"; echo "bot=$BOT"; } >> "$GITHUB_OUTPUT"
+
   # 1. Aplicația Vue → GitHub Pages
   pages:
+    needs: config
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -36,6 +83,9 @@ jobs:
       - run: npm run build
         env:
           BASE_PATH: /${{ github.event.repository.name }}/
+          VITE_SUPABASE_URL: https://${{ needs.config.outputs.ref }}.supabase.co
+          VITE_SUPABASE_KEY: ${{ needs.config.outputs.key }}
+          VITE_BOT_USERNAME: ${{ needs.config.outputs.bot }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -45,8 +95,11 @@ jobs:
 
   # 2. Baza de date, funcțiile serverului și botul Telegram
   backend:
+    needs: config
     runs-on: ubuntu-latest
     env:
+      PROJECT_REF: ${{ needs.config.outputs.ref }}
+      BOT_USERNAME: ${{ needs.config.outputs.bot }}
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}

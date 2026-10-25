@@ -59,7 +59,8 @@ export function shareLink(url, text) {
   else window.open(share, '_blank')
 }
 
-export const BOT_USERNAME = 'andronicfambot'
+// Numele botului vine din setările instalării (aflat automat din token la publicare)
+export const BOT_USERNAME = import.meta.env.VITE_BOT_USERNAME || 'andronicfambot'
 
 // Iconiță pe ecranul telefonului (Telegram Bot API 8.0+)
 export const homeShortcutSupported = () => !!(tg?.isVersionAtLeast?.('8.0') && tg.addToHomeScreen)

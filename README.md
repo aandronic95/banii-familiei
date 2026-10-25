@@ -1,56 +1,69 @@
 # Banii Familiei
 
-Mini aplicație Telegram pentru finanțele familiei: conturi (carduri, cash, depozite), tranzacții cu poze de bon, credite cu grafic de rambursare, mașina (benzină, consum, service, asigurări), bugete pe categorii, rapoarte și notificări de la bot. Română și rusă, temă luminoasă și întunecată după Telegram.
+Mini aplicație Telegram pentru finanțele familiei: conturi, tranzacții cu bonuri, credite, mașină, investiții, bugete, rapoarte și notificări de la bot. Română și rusă.
 
-- **Aplicația:** Vue 3 + Vite, publicată pe GitHub Pages: `https://aandronic95.github.io/banii-familiei/`
-- **Date:** Supabase (proiect `ecfehopapvxngnxecetg`), cu securitate pe rânduri (RLS)
-- **Bot:** [@andronicfambot](https://t.me/andronicfambot)
+- **Aplicația:** Vue 3 + Vite, pe GitHub Pages (`https://<cont>.github.io/<depozit>/`)
+- **Date:** Supabase, cu securitate pe rânduri (RLS): fiecare familie vede doar datele ei
+- **Server:** funcțiile Supabase (login prin Telegram, bot, notificări, rapoarte)
+
+Fiecare instalare are **botul ei, baza ei de date și pagina ei**. Nimic nu e comun între familii.
+
+## Instalare pentru o familie nouă (~20 de minute, gratuit)
+
+Ideal, contul de GitHub, de Supabase și botul sunt ale familiei care îl folosește: așa doar ea are acces la date.
+
+### 1. Botul Telegram
+În Telegram, la **@BotFather**: `/newbot` → un nume → un username care se termină în `bot`. Păstrează **tokenul** (îl pui doar în GitHub, la pasul 4 — nu-l trimite nimănui).
+
+### 2. Baza de date Supabase
+Pe **supabase.com** → *New project*. Alege o parolă pentru baza de date și păstreaz-o. Regiunea: *Central EU (Frankfurt)*.
+Din adresa proiectului (`supabase.com/dashboard/project/`**`abcdefghij…`**) copiază **codul proiectului**.
+Apoi: avatar → *Account preferences* → *Access Tokens* → *Generate new token*.
+
+### 3. Copia codului pe GitHub
+Pe pagina acestui depozit: **Use this template → Create a new repository** (sau *Fork*), cu orice nume, de ex. `banii-familiei`.
+În depozitul nou: **Settings → Pages → Source: GitHub Actions**. Dacă e fork: tab-ul **Actions → „I understand… enable”**.
+
+### 4. Setările (Settings → Secrets and variables → Actions)
+**Secrets** (*New repository secret*):
+
+| Nume | Ce pui |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | tokenul de la @BotFather |
+| `SUPABASE_ACCESS_TOKEN` | tokenul de la pasul 2 |
+| `SUPABASE_DB_PASSWORD` | parola bazei de date |
+| `OWNER_TELEGRAM_ID` | ID-ul Telegram al proprietarului (îl afli de la @userinfobot, sau de la botul tău cu `/id` după prima publicare) |
+
+**Variables** (*New repository variable*):
+
+| Nume | Ce pui |
+|---|---|
+| `SUPABASE_PROJECT_REF` | codul proiectului de la pasul 2 |
+
+Cheia publică a proiectului și numele botului se află singure la publicare. (Dacă cheia nu poate fi aflată, pune-o în variabila `SUPABASE_PUBLISHABLE_KEY`: *Project Settings → API Keys → Publishable key*. Niciodată cheia *secret*.)
+
+### 5. Publicarea
+**Actions → Publicare → Run workflow**. În 3–5 minute: tabelele în baza de date, funcțiile serverului, pagina aplicației și botul (meniul „Deschide”, comenzile) sunt gata.
+Dacă `OWNER_TELEGRAM_ID` lipsea: deschide botul, scrie `/id`, adaugă secretul și rulează din nou.
+
+### 6. Prima deschidere
+Deschide botul → **Start** → **Deschide**. La prima intrare a proprietarului se creează familia, cu categorii de bază. Ceilalți membri intră prin **Mai mult → Familie și acces → Invită**.
+
+Notificările (dimineața, seara, duminică, pe 1 ale lunii) pornesc singure din `notify.yml`.
+
+## Actualizări
+Ce se schimbă în depozitul original ajunge în copie cu **Sync fork** (dacă e fork) sau copiind modificările; fiecare `push` în `main` republică automat.
 
 ## Securitate
-
-- Intrarea se face doar din Telegram. Serverul verifică semnătura Telegram a fiecărei deschideri (cu tokenul botului, care stă doar pe server) și apoi dă o sesiune.
-- Au acces doar membrii din tabelul `members`: proprietarul (ID-ul din `OWNER_TELEGRAM_ID`) și cei care au intrat cu o invitație. Invitațiile sunt de unică folosință și expiră în 7 zile.
-- Politicile RLS din baza de date lasă fiecare membru să vadă și să modifice doar datele familiei lui. Nimeni nu își poate schimba singur rolul.
-- Bonurile stau într-un spațiu privat; se deschid prin linkuri temporare (10 minute).
+- Intrarea se face doar din Telegram; serverul verifică semnătura fiecărei deschideri cu tokenul botului, care stă doar pe server.
+- Au acces doar proprietarul (`OWNER_TELEGRAM_ID`) și cei invitați (invitații de unică folosință, 7 zile).
+- RLS: fiecare membru vede și modifică doar datele familiei lui; nimeni nu își poate schimba singur rolul.
+- Bonurile stau într-un spațiu privat, cu linkuri temporare. Codul PIN și cheile Apple Pay se păstrează doar ca hash.
 - Cheia din aplicație (`sb_publishable_…`) e publică prin definiție; protecția datelor vine din RLS.
-
-## Instalare (o singură dată)
-
-### 1. Depozitul GitHub
-Creează depozitul `banii-familiei` în contul `aandronic95` și încarcă acest cod în ramura `main`.
-
-În **Settings → Pages**, la *Source* alege **GitHub Actions**.
-
-### 2. Secretele (Settings → Secrets and variables → Actions → New repository secret)
-
-| Nume | De unde îl iei |
-|---|---|
-| `TELEGRAM_BOT_TOKEN` | @BotFather → `/mybots` → andronicfambot → *API Token* |
-| `SUPABASE_ACCESS_TOKEN` | supabase.com → avatar → *Account preferences* → *Access Tokens* → *Generate new token* |
-| `SUPABASE_DB_PASSWORD` | Parola bazei de date, aleasă la crearea proiectului (o poți reseta în *Project Settings → Database*) |
-| `OWNER_TELEGRAM_ID` | ID-ul tău Telegram: scrie-i `/id` lui @andronicfambot după primul deploy, sau folosește @userinfobot |
-
-Tokenul botului nu ajunge niciodată în aplicație; doar serverul îl folosește.
-
-### 3. Publicarea
-Orice `push` în `main` (sau *Actions → Publicare → Run workflow*) face automat:
-1. testele și build-ul aplicației, apoi publicarea pe GitHub Pages;
-2. crearea tabelelor în Supabase, publicarea funcțiilor serverului și setarea secretelor;
-3. configurarea botului: webhook, butonul „Deschide” din meniu și comenzile.
-
-### 4. Prima deschidere
-Deschide @andronicfambot, apasă **Start**, apoi **Deschide**. La prima intrare a proprietarului se creează familia, cu categorii de bază și un portofel cash.
-
-### 5. Invitarea soției
-În aplicație: **Mai mult → Familie și acces → Invită prin Telegram**. Trimite-i linkul; ea îl deschide, apasă **Start** și **Deschide**, și are acces complet.
-
-## Notificări
-Rulate de GitHub Actions (`notify.yml`): zilnic dimineața (scadențe credite cu 3 zile înainte și în ziua plății, asigurări și revizie cu 30/7/1 zile înainte, buget la 80% și 100%, plus cursul BNM pentru EUR și USD) și duminică seara (rezumatul săptămânii). Fiecare persoană le poate opri din **Mai mult**.
 
 ## Dezvoltare locală
 ```bash
 npm install
-npm test        # semnătura Telegram, secretele, graficul de credit
+npm test
 npm run build
 ```
-Aplicația funcționează doar deschisă din Telegram; în browser arată un ecran cu linkul spre bot.
