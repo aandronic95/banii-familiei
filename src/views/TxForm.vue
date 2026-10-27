@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById } from '../store.js'
+import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById, completeTask } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { parseAmount, todayISO, money, isExpression, dateShort } from '../lib/format.js'
 import { confirmDialog, haptic, qrSupported, scanQr, openLink } from '../lib/telegram.js'
@@ -116,6 +116,32 @@ function dropItem(i) {
   f.items.splice(i, 1)
   const cur = parseAmount(f.amount)
   if (cur && x?.sum) f.amount = String(Math.max(0, Math.round((cur - x.sum) * 100) / 100)).replace('.', ',')
+}
+
+// Din sarcini: „Plătește lumina 450” → cheltuiala precompletată; după salvare sarcina se bifează
+const fromTask = isNew && route.query.task ? S.tasks.find((x) => x.id === route.query.task && !x.done) : null
+if (fromTask) {
+  f.kind = 'expense'
+  if (fromTask.amount) f.amount = String(Number(fromTask.amount)).replace('.', ',')
+  if (fromTask.category_id) f.category_id = fromTask.category_id
+  if (fromTask.account_id && activeAccounts.value.some((a) => a.id === fromTask.account_id)) f.account_id = fromTask.account_id
+  f.merchant = fromTask.title.slice(0, 60)
+}
+// Din lista de cumpărături: produsele bifate devin pozițiile cheltuielii
+const fromShop = isNew && route.query.shop === '1' ? S.shopping.filter((x) => x.done) : []
+if (fromShop.length) {
+  f.kind = 'expense'
+  f.items = fromShop.map((x) => {
+    const q = parseFloat(String(x.qty || '').replace(',', '.'))
+    const sum = Number(x.price) || 0
+    const qty = q > 0 && !/[a-zа-я]/i.test(String(x.qty || '').replace(/buc|шт/i, '')) ? q : 1
+    return { name: x.name, qty, price: sum && qty ? Math.round((sum / qty) * 100) / 100 : 0, sum }
+  })
+  const total = f.items.reduce((s2, x) => s2 + x.sum, 0)
+  if (total > 0) f.amount = String(Math.round(total * 100) / 100).replace('.', ',')
+  const food = S.categories.find((c) => c.kind === 'expense' && c.icon === 'cart' && !c.archived)
+  if (food) f.category_id = food.id
+  if (!f.note) f.note = itemsNote(f.items)
 }
 
 // Etichete: #vacanță, #renovare — se adaugă cu Enter, virgulă sau spațiu
@@ -244,7 +270,9 @@ async function submit() {
         merchant: row.merchant, car_id: row.car_id, car_kind: row.car_kind, tags: row.tags, sort: S.templates.length + 1,
       })
     }
-    haptic('success'); if (!saved._pending) toast(parts.value.length ? t('splitSaved', parts.value.length + 1) : t('saved')); router.back()
+    if (fromTask) await completeTask(fromTask, { txId: saved._pending ? null : saved.id }).catch((e) => console.warn('task', e))
+    if (fromShop.length) for (const x of fromShop) await remove('shopping_items', x.id, { silent: true }).catch(() => {})
+    haptic('success'); if (!saved._pending) toast(fromTask ? t('taskDonePaid') : parts.value.length ? t('splitSaved', parts.value.length + 1) : t('saved')); router.back()
   } catch (e) { console.error(e); err.value = t('error', e); haptic('error') } finally { busy.value = false }
 }
 
@@ -319,6 +347,8 @@ async function del() {
     </div>
     </div>
 
+    <div v-if="fromTask" class="bf-banner" style="background: var(--brand-soft);"><Icon name="check" /><div>{{ t('txFromTask', fromTask.title) }}</div></div>
+    <div v-if="fromShop.length" class="bf-banner" style="background: var(--brand-soft);"><Icon name="cart" /><div>{{ t('txFromShop', fromShop.length) }}</div></div>
     <div v-if="inv" class="bf-banner" style="background: var(--brand-soft);">
       <Icon name="chart" />
       <div><b>{{ t('investmentLink') }}:</b> {{ [inv.platform, inv.name, inv.code].filter(Boolean).join(' · ') }}</div>

@@ -76,14 +76,19 @@ onMounted(() => {
   })
 })
 
-// Link direct la o tranzacție (butonul „Modifică” din mesajul botului)
-const deepTx = new URLSearchParams(location.search).get('tx')
+// Linkuri directe din mesajele botului: ?tx=<id> (cheltuială), ?task=<id> (sarcină), ?view=shopping (cumpărături)
+const qs = new URLSearchParams(location.search)
+const deep = { tx: qs.get('tx'), task: qs.get('task'), view: qs.get('view') }
 watch(() => S.status, (st) => {
-  if (st === 'ready' && deepTx && /^[0-9a-f-]{36}$/i.test(deepTx)) {
-    history.replaceState(null, '', location.pathname)
-    router.push('/tx/' + deepTx)
-  }
-})
+  if (st !== 'ready' || !(deep.tx || deep.task || deep.view)) return
+  history.replaceState(null, '', location.pathname)
+  const uuid = /^[0-9a-f-]{36}$/i
+  if (deep.tx && uuid.test(deep.tx)) router.push('/tx/' + deep.tx)
+  else if (deep.task && uuid.test(deep.task)) router.push('/task/' + deep.task)
+  else if (deep.view === 'shopping') router.push({ path: '/tasks', query: { tab: 'shopping' } })
+  else if (deep.view === 'tasks') router.push('/tasks')
+  deep.tx = deep.task = deep.view = null
+}, { immediate: true })
 
 watch(() => [route.fullPath, S.status], () => {
   const root = route.meta.tab

@@ -1,9 +1,11 @@
-// Webhook-ul botului: /start (cu sau fără invitație), /id, /ajutor,
-// cheltuieli scrise direct („cafea 45”) și butonul „Anulează”.
+// Webhook-ul botului: /start (cu sau fără invitație), /id, /ajutor, /sarcini, /cumparaturi,
+// cheltuieli scrise direct („cafea 45”), sarcini („sarcină: …”), cumpărături („cumpără: …”) și butoanele „Anulează” / „Gata”.
 import { bigSpendAlert } from "../_shared/alert.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { parseQuick, pickAccount } from "../_shared/quick.ts";
+import { parseTask } from "../_shared/taskparse.ts";
+import { completeTask, taskButtons, taskLine, T as TT, dmy } from "../_shared/tasks.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "";
@@ -15,8 +17,8 @@ const fmt = (n: number) => n.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+
 const ok = () => new Response("ok");
 
 const HELP = {
-  ro: "Scrie-mi o cheltuială și o salvez:\n• <code>cafea 45</code>\n• <code>benzină 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+salariu 14200</code> (venit)\n\nPoți scrie mai multe, câte una pe rând. Contul: „cash” sau numele cardului; altfel se ia primul tău card.",
-  ru: "Напишите расход, и я его сохраню:\n• <code>кофе 45</code>\n• <code>бензин 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+зарплата 14200</code> (доход)\n\nМожно несколько, по одному в строке. Счёт: «cash» или название карты; иначе первая ваша карта.",
+  ro: "Scrie-mi o cheltuială și o salvez:\n• <code>cafea 45</code>\n• <code>benzină 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+salariu 14200</code> (venit)\n\nPoți scrie mai multe, câte una pe rând. Contul: „cash” sau numele cardului; altfel se ia primul tău card.\n\n<b>Sarcini</b>\n• <code>sarcină: schimbă uleiul vineri la 18:00</code>\n• <code>sarcină: plătește lumina 450 lei pe 15 pentru Ana</code>\n• <code>sarcină: udă florile în fiecare sâmbătă</code>\n• <code>cumpără: lapte, pâine 2, ouă</code>\n/sarcini — ce e deschis · /cumparaturi — lista",
+  ru: "Напишите расход, и я его сохраню:\n• <code>кофе 45</code>\n• <code>бензин 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+зарплата 14200</code> (доход)\n\nМожно несколько, по одному в строке. Счёт: «cash» или название карты; иначе первая ваша карта.\n\n<b>Задачи</b>\n• <code>задача: поменять масло в пятницу в 18:00</code>\n• <code>задача: оплатить свет 450 лей до 15 для Анны</code>\n• <code>купить: молоко, хлеб 2, яйца</code>\n/sarcini — открытые задачи · /cumparaturi — список",
 };
 
 async function memberByTelegram(tgId: number) {
@@ -72,6 +74,15 @@ async function saveQuick(member: { id: string; family_id: string; user_id: strin
   return { tx, q, account, cat };
 }
 
+// deno-lint-ignore no-explicit-any
+async function notifyAssignee(task: any, byName: string) {
+  const { data: a } = await db.from("members").select("telegram_id, lang, notify, role").eq("id", task.assignee_id).maybeSingle();
+  if (!a?.telegram_id || a.role === "none" || a.notify?.tasks === false) return;
+  const { data: mem } = await db.from("members").select("id, name").eq("family_id", task.family_id);
+  const lg = a.lang === "ru" ? "ru" : "ro";
+  await tg(BOT_TOKEN, "sendMessage", { chat_id: a.telegram_id, text: TT[lg].assigned(byName) + "\n" + taskLine(task, lg, mem ?? []), reply_markup: taskButtons(task, lg, APP_URL) }).catch(() => {});
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return ok();
   const expected = await derivedSecret(BOT_TOKEN, "webhook");
@@ -92,6 +103,22 @@ Deno.serve(async (req) => {
           chat_id: cb.message.chat.id, message_id: cb.message.message_id,
           text: (ru ? "↩️ Отменено: " : "↩️ Anulat: ") + (cb.message.text ?? "").replace(/^✅ /, ""),
         });
+      }
+    } else if (member && action === "tdone" && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
+      // „✅ Gata” din mesajul botului
+      const { data: task } = await db.from("tasks").select("*").eq("id", id).eq("family_id", member.family_id).maybeSingle();
+      const lg = ru ? "ru" : "ro";
+      if (!task || task.done) {
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: TT[lg].already });
+      } else {
+        const next = await completeTask(db, task, member.id).catch(() => null);
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: TT[lg].marked });
+        if (cb.message) {
+          await tg(BOT_TOKEN, "editMessageText", {
+            chat_id: cb.message.chat.id, message_id: cb.message.message_id,
+            text: "✅ " + task.title + (next?.due_date ? "\n🔁 " + TT[lg].next(dmy(next.due_date)) : ""),
+          });
+        }
       }
     } else {
       await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id });
@@ -130,6 +157,55 @@ Deno.serve(async (req) => {
   if (text.startsWith("/")) return ok();
   if (!member) {
     await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: ru ? "У вас нет доступа к семейному бюджету." : "Nu ai acces la bugetul familiei." });
+    return ok();
+  }
+
+  const lg = ru ? "ru" : "ro";
+  const { data: famMembers } = await db.from("members").select("id, name").eq("family_id", member.family_id);
+
+  // ── /sarcini: ce e deschis, cu buton „Gata” ──
+  if (/^\/(sarcini|tasks|zadachi)/i.test(text)) {
+    const { data: open } = await db.from("tasks").select("*").eq("family_id", member.family_id).eq("done", false)
+      .order("due_date", { ascending: true, nullsFirst: false }).limit(15);
+    if (!open?.length) { await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: TT[lg].none }); return ok(); }
+    await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: TT[lg].list });
+    for (const t of open.slice(0, 10)) {
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: taskLine(t, lg, famMembers ?? []), reply_markup: taskButtons(t, lg, APP_URL) });
+    }
+    return ok();
+  }
+  // ── /cumparaturi: lista comună ──
+  if (/^\/(cumparaturi|shop|pokupki)/i.test(text)) {
+    const { data: items } = await db.from("shopping_items").select("name, qty").eq("family_id", member.family_id).eq("done", false).order("created_at").limit(60);
+    await tg(BOT_TOKEN, "sendMessage", {
+      chat_id: chatId,
+      text: items?.length ? TT[lg].shopList + "\n" + items.map((i) => `• ${i.name}${i.qty ? " — " + i.qty : ""}`).join("\n") : TT[lg].shopNone,
+      reply_markup: { inline_keyboard: [[{ text: TT[lg].open, web_app: { url: `${APP_URL}?view=shopping` } }]] },
+    });
+    return ok();
+  }
+
+  // ── Sarcini („sarcină: …”) și cumpărături („cumpără: …”) ──
+  const pt = parseTask(text, { today: todayLocal(), members: famMembers ?? [] });
+  if (pt?.kind === "shopping" && pt.items.length) {
+    const { error } = await db.from("shopping_items").insert(pt.items.map((i) => ({ family_id: member.family_id, name: i.name, qty: i.qty, created_by: member.user_id })));
+    await tg(BOT_TOKEN, "sendMessage", {
+      chat_id: chatId,
+      text: error ? (ru ? "Не удалось сохранить." : "Nu am putut salva.") : TT[lg].shopAdded(pt.items.length) + "\n" + pt.items.map((i) => `• ${i.name}${i.qty ? " — " + i.qty : ""}`).join("\n"),
+      reply_markup: { inline_keyboard: [[{ text: TT[lg].open, web_app: { url: `${APP_URL}?view=shopping` } }]] },
+    });
+    return ok();
+  }
+  if (pt?.kind === "task" && pt.explicit) {
+    const { data: task, error } = await db.from("tasks").insert({
+      family_id: member.family_id, title: pt.title, kind: pt.money ? "money" : "task", assignee_id: pt.assignee_id,
+      due_date: pt.due_date ?? (pt.repeat !== "none" ? todayLocal() : null), due_time: pt.due_time, repeat: pt.repeat,
+      amount: pt.amount, created_by: member.user_id, category_id: null,
+    }).select("*").single();
+    if (error || !task) { await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: ru ? "Не удалось сохранить." : "Nu am putut salva." }); return ok(); }
+    await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: TT[lg].added + "\n" + taskLine(task, lg, famMembers ?? []), reply_markup: taskButtons(task, lg, APP_URL) });
+    // anunță persoana căreia i s-a dat sarcina
+    if (task.assignee_id && task.assignee_id !== member.id) await notifyAssignee(task, member.name);
     return ok();
   }
 

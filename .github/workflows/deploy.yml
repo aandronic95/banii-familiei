@@ -143,7 +143,7 @@ jobs:
           curl -sf "$API/setChatMenuButton" -H 'content-type: application/json' \
             -d "{\"menu_button\":{\"type\":\"web_app\",\"text\":\"Deschide\",\"web_app\":{\"url\":\"${APP_URL}\"}}}" > /dev/null
           curl -sf "$API/setMyCommands" -H 'content-type: application/json' \
-            -d '{"commands":[{"command":"start","description":"Deschide aplicația"},{"command":"ajutor","description":"Cum adaug o cheltuială prin mesaj"},{"command":"id","description":"Arată ID-ul tău Telegram"}]}' > /dev/null
+            -d '{"commands":[{"command":"start","description":"Deschide aplicația"},{"command":"ajutor","description":"Cum adaug o cheltuială prin mesaj"},{"command":"sarcini","description":"Sarcinile deschise"},{"command":"cumparaturi","description":"Lista de cumpărături"},{"command":"id","description":"Arată ID-ul tău Telegram"}]}' > /dev/null
           echo "Bot configurat: https://t.me/${BOT_USERNAME}"
       - name: Verifică funcțiile publicate
         run: |

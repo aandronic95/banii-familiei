@@ -387,3 +387,34 @@ Bon fiscal nr. 31
   assert.equal(b.total, 43); assert.equal(b.items.length, 2); assert.equal(b.date, '2026-10-20'); assert.equal(b.matches, true)
   assert.equal(parseReceiptText('').items.length, 0)
 })
+
+const taskTs = await import('../supabase/functions/_shared/taskparse.ts').catch((e) => { console.error(e); return null })
+test('sarcini scrise în cuvinte (aplicație = server)', async () => {
+  const js = await import('../src/lib/taskparse.js')
+  const M = [{ id: 'm1', name: 'Andrian' }, { id: 'm2', name: 'Soția' }, { id: 'm3', name: 'Ана' }]
+  const o = { today: '2026-10-27', members: M } // marți
+  const p = (x) => js.parseTask(x, o)
+  let r = p('sarcină: schimbă uleiul vineri la 18:00 pentru Andrian')
+  assert.deepEqual([r.title, r.due_date, r.due_time, r.assignee_id, r.explicit], ['Schimbă uleiul', '2026-10-30', '18:00', 'm1', true])
+  r = p('plătește lumina 450 lei pe 15')
+  assert.deepEqual([r.title, r.amount, r.money, r.due_date], ['Plătește lumina', 450, true, '2026-11-15'])
+  r = p('udă florile în fiecare sâmbătă')
+  assert.deepEqual([r.title, r.repeat, r.due_date], ['Udă florile', 'weekly', '2026-10-31'])
+  r = p('Plătește chiria 5000 lunar pe 5')
+  assert.deepEqual([r.amount, r.repeat, r.due_date], [5000, 'monthly', '2026-11-05'])
+  r = p('ia copilul de la cerc azi 17:30 @soția')
+  assert.deepEqual([r.title, r.due_date, r.due_time, r.assignee_id], ['Ia copilul de la cerc', '2026-10-27', '17:30', 'm2'])
+  r = p('в пятницу забрать посылку для Аны')
+  assert.deepEqual([r.title, r.due_date, r.assignee_id], ['Забрать посылку', '2026-10-30', 'm3'])
+  r = p('Cumpără 2 pâini')
+  assert.deepEqual([r.title, r.amount], ['Cumpără 2 pâini', null]) // numărul nu e sumă
+  const s = p('cumpără: lapte, pâine 2, 10 ouă și brânză')
+  assert.equal(s.kind, 'shopping')
+  assert.deepEqual(s.items, [{ name: 'Lapte', qty: null }, { name: 'Pâine', qty: '2' }, { name: 'Ouă', qty: '10' }, { name: 'Brânză', qty: null }])
+  assert.equal(js.nextDue('2026-10-27', 'weekly', 1, '2026-10-27'), '2026-11-03')
+  assert.equal(js.nextDue('2026-01-31', 'monthly', 1, '2026-01-31'), '2026-02-28')
+  assert.equal(js.nextDue('2026-10-01', 'daily', 1, '2026-10-27'), '2026-10-27') // bifată târziu: sare la azi
+  assert.equal(js.nextDue('2026-10-01', 'none', 1, '2026-10-27'), null)
+  if (taskTs) for (const x of ['sarcină: schimbă uleiul vineri la 18:00 pentru Andrian', 'plătește lumina 450 lei pe 15', 'cumpără: lapte, pâine 2', 'в пятницу забрать посылку для Аны'])
+    assert.deepEqual(taskTs.parseTask(x, o), js.parseTask(x, o))
+})

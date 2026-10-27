@@ -56,8 +56,8 @@ const salary = computed(() => {
   return { date: s.next_date, days: daysUntil(s.next_date), due, left, perDay: left / d }
 })
 
-const ICON = { loan: 'bank', rec: 'clock', car: 'car', inv: 'chart', debt: 'users' }
-const LABEL = { loan: 'calLoan', rec: 'calRec', car: 'calCar', inv: 'calInv', debt: 'calDebt' }
+const ICON = { loan: 'bank', rec: 'clock', car: 'car', inv: 'chart', debt: 'users', task: 'check' }
+const LABEL = { loan: 'calLoan', rec: 'calRec', car: 'calCar', inv: 'calInv', debt: 'calDebt', task: 'calTask' }
 </script>
 
 <template>

@@ -9,6 +9,7 @@ import { t as tr } from './lib/i18n.js'
 import { accruedInterest, liveAccrued, perDay, assetValue } from './lib/invest.js'
 import { detectSubscriptions, suggestBudget } from './lib/insights.js'
 import { schedule } from './lib/loan.js'
+import { nextDue, parseShopping } from './lib/taskparse.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -29,6 +30,9 @@ export const S = reactive({
   debts: [],
   goals: [],
   templates: [],
+  tasks: [],
+  taskComments: [],
+  shopping: [],
   rates: { MDL: 1 },
   rateDates: {},
   offline: false,   // lucrăm din copia locală, fără server
@@ -39,10 +43,11 @@ export const S = reactive({
 const TABLES = {
   accounts: 'accounts', categories: 'categories', transactions: 'transactions', loans: 'loans',
   loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments', recurring: 'recurring', debts: 'debts', goals: 'goals', templates: 'templates',
+  tasks: 'tasks', task_comments: 'taskComments', shopping_items: 'shopping',
 }
 
 // ───────────── Copia locală și coada offline ─────────────
-const DATA_KEYS = ['family', 'members', 'accounts', 'categories', 'transactions', 'loans', 'loanPayments', 'cars', 'carEvents', 'investments', 'recurring', 'debts', 'goals', 'templates']
+const DATA_KEYS = ['family', 'members', 'accounts', 'categories', 'transactions', 'loans', 'loanPayments', 'cars', 'carEvents', 'investments', 'recurring', 'debts', 'goals', 'templates', 'tasks', 'taskComments', 'shopping']
 const snapKey = () => 'snap:' + S.tgId
 const queueKey = () => 'queue:' + S.tgId
 let queue = []
@@ -208,7 +213,7 @@ async function fetchAll(table, order = 'id') {
 }
 
 export async function loadAll() {
-  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, rates] = await Promise.all([
+  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping, rates] = await Promise.all([
     supabase.from('families').select('*').limit(1).single(),
     fetchAll('members', 'created_at'),
     fetchAll('accounts', 'sort'),
@@ -223,11 +228,14 @@ export async function loadAll() {
     fetchAll('debts', 'created_at'),
     fetchAll('goals', 'created_at'),
     fetchAll('templates', 'sort').catch(() => []),
+    fetchAll('tasks', 'created_at').catch(() => []),
+    fetchAll('task_comments', 'created_at').catch(() => []),
+    fetchAll('shopping_items', 'created_at').catch(() => []),
     supabase.from('rates').select('*').order('date', { ascending: false }).limit(20),
   ])
   if (fam.error) throw fam.error
   lastLoad = Date.now()
-  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates })
+  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping })
   for (const r of rates.data || []) {
     if (!S.rateDates[r.currency]) { S.rates[r.currency] = Number(r.rate); S.rateDates[r.currency] = r.date }
   }
@@ -307,7 +315,7 @@ function maybeAlert(rows) {
 }
 
 // Ce se poate „Anula” după ștergere (fără rânduri copil care s-ar pierde în cascadă)
-const UNDOABLE = ['transactions', 'car_events', 'debts', 'goals', 'recurring', 'investments']
+const UNDOABLE = ['transactions', 'car_events', 'debts', 'goals', 'recurring', 'investments', 'tasks', 'shopping_items']
 
 export async function remove(table, id, { onFinal, silent = false } = {}) {
   const key = TABLES[table]
@@ -845,6 +853,46 @@ export async function bulkInsert(table, rows, onProgress) {
   return done
 }
 
+// ───────────── Sarcini și cumpărături ─────────────
+export const openTasks = computed(() => S.tasks.filter((x) => !x.done))
+// Sarcinile de azi și întârziate (ale mele sau „pentru oricine”)
+export const todayTasks = computed(() => {
+  const today = todayISO()
+  const mid = me.value?.id
+  return openTasks.value.filter((x) => x.due_date && x.due_date <= today && (!x.assignee_id || x.assignee_id === mid))
+    .sort((a, b) => a.due_date.localeCompare(b.due_date) || String(a.due_time || '99').localeCompare(String(b.due_time || '99')))
+})
+export const shoppingLeft = computed(() => S.shopping.filter((x) => !x.done))
+
+// Bifează: marchează făcută și, dacă se repetă, creează următoarea (cu pașii debifați)
+export async function completeTask(task, { txId = null } = {}) {
+  await save('tasks', { id: task.id, done: true, done_at: new Date().toISOString(), done_by: me.value?.id || null, ...(txId ? { tx_id: txId } : {}) })
+  if (task.repeat && task.repeat !== 'none') {
+    const due = nextDue(task.due_date, task.repeat, task.repeat_every, todayISO())
+    if (due) {
+      const next = { title: task.title, note: task.note, kind: task.kind, assignee_id: task.assignee_id, due_date: due, due_time: task.due_time,
+        repeat: task.repeat, repeat_every: task.repeat_every, amount: task.amount, category_id: task.category_id, account_id: task.account_id,
+        steps: (task.steps || []).map((x) => ({ ...x, done: false })), sort: task.sort }
+      return save('tasks', next)
+    }
+  }
+  return null
+}
+export const reopenTask = (task) => save('tasks', { id: task.id, done: false, done_at: null, done_by: null })
+
+// Anunță prin bot (sarcină dată altcuiva, comentariu nou) — doar cu internet, fără să blocheze
+export function notifyTask(taskId, event, commentId) {
+  if (S.offline || !taskId || String(taskId).length < 36) return
+  supabase.functions.invoke('alert', { body: { task: taskId, event, comment: commentId } }).catch(() => {})
+}
+
+// „lapte, pâine 2, ouă” → câte un rând în lista de cumpărături
+export async function addShopping(text) {
+  const items = parseShopping(text)
+  for (const i of items) await save('shopping_items', { name: i.name, qty: i.qty })
+  return items.length
+}
+
 export const txCurrency = (t) => accountById(t.account_id)?.currency || 'MDL'
 
 // Sume într-o perioadă (în MDL); transferurile nu intră în venituri/cheltuieli
@@ -906,6 +954,10 @@ export function upcoming(from, to) {
       if (d >= from && !loanForRecurring(r, openLoans, d)) ev.push({ date: d, type: 'rec', title: r.name, amount: Number(r.amount), currency: accountById(r.account_id)?.currency || 'MDL', sign: r.kind === 'income' ? 1 : -1, to: '/recurring/' + r.id, recurring: r })
       d = nextOccurrence(d, r.every_months, r.day_of_month)
     }
+  }
+  for (const k of S.tasks) {
+    if (k.done || k.kind !== 'money' || !Number(k.amount) || !k.due_date || k.due_date < from || k.due_date > to) continue
+    ev.push({ date: k.due_date, type: 'task', title: k.title, amount: Number(k.amount), currency: accountById(k.account_id)?.currency || 'MDL', sign: -1, to: '/task/' + k.id })
   }
   for (const e of S.carEvents) {
     if (e.done || !e.due_date || e.due_date < from || e.due_date > to) continue

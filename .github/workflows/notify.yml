@@ -6,10 +6,11 @@ on:
     - cron: '0 16 * * 0'   # duminică seara: rezumatul săptămânii + backup Excel (cui l-a cerut)
     - cron: '30 6 1 * *'   # pe 1 a lunii: raportul PDF pentru luna trecută
     - cron: '0 18 * * *'   # seara, ~21:00 la Chișinău: rezumatul zilei
+    - cron: '*/15 5-21 * * *' # la fiecare 15 minute, ziua: mementourile sarcinilor cu oră
   workflow_dispatch:
     inputs:
       task:
-        description: 'daily, weekly, monthly sau evening'
+        description: 'daily, weekly, monthly, evening sau remind'
         default: daily
 
 jobs:
@@ -27,6 +28,7 @@ jobs:
               "0 16 * * 0") TASK=weekly ;;
               "30 6 1 * *") TASK=monthly ;;
               "0 18 * * *") TASK=evening ;;
+              "*/15 5-21 * * *") TASK=remind ;;
               *) TASK=daily ;;
             esac
           fi
@@ -38,6 +40,8 @@ jobs:
             monthly)
               curl -sf -X POST "$BASE/notify?task=monthly" -H "x-cron-secret: ${SECRET}"; echo
               curl -sf -X POST "$BASE/docs?type=report&all=1" -H "x-cron-secret: ${SECRET}"; echo ;;
+            remind)
+              curl -sf -X POST "$BASE/notify?task=remind" -H "x-cron-secret: ${SECRET}"; echo ;;
             evening)
               curl -sf -X POST "$BASE/notify?task=evening" -H "x-cron-secret: ${SECRET}"; echo ;;
             *)

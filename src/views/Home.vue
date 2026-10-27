@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, isOwner, savePrefs, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
+import { S, me, isOwner, savePrefs, todayTasks, shoppingLeft, completeTask, reopenTask, memberById, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
@@ -64,8 +64,18 @@ async function useTemplate(tp) {
   } catch (e) { console.error(e); toast(t('error', e)) } finally { tplBusy.value = '' }
 }
 
+// Sarcinile de azi (și întârziate) + câte sunt de cumpărat
+const todayISOv = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+async function tickTask(x) {
+  if (x.kind === 'money') { router.push({ path: '/tx/new', query: { task: x.id } }); return }
+  const next = await completeTask(x).catch((e) => { toast(t('error', e)); return undefined })
+  if (next === undefined) return
+  haptic('success')
+  toast(t('taskDone'), { action: t('undo'), fn: async () => { await reopenTask(x); if (next) await remove('tasks', next.id, { silent: true }) } })
+}
+
 // Ecranul Acasă personalizat (ordinea și ce se vede), salvat pe persoană
-const SECTIONS = ['guide', 'quick', 'templates', 'salary', 'alerts', 'forecast', 'budgets', 'emergency', 'recent']
+const SECTIONS = ['guide', 'quick', 'templates', 'tasks', 'salary', 'alerts', 'forecast', 'budgets', 'emergency', 'recent']
 const customize = ref(false)
 const layout = computed(() => {
   const p = me.value?.prefs?.home || {}
@@ -197,6 +207,24 @@ const alerts = computed(() => {
           <TxRow v-for="x in recent" :key="x.id" :tx="x" />
         </div>
         <div v-else class="bf-card empty">{{ t('noTx') }}</div>
+      </section>
+      <section v-if="key === 'tasks' && (todayTasks.length || shoppingLeft.length)" class="stack" :aria-label="t('tasksTitle')">
+        <div class="sec-head"><h2 class="h-sec">{{ t('tasksToday') }}</h2><button class="link" @click="router.push('/tasks')">{{ t('all') }}</button></div>
+        <div class="bf-list">
+          <div v-for="x in todayTasks.slice(0, 4)" :key="x.id" class="bf-row task-row">
+            <button type="button" class="tick" :class="{ 'tick--money': x.kind === 'money' }" :aria-label="t('taskMarkDone', x.title)" @click="tickTask(x)"><Icon v-if="x.kind === 'money'" name="cash" :size="14" /></button>
+            <button type="button" class="bf-row__body" style="all: unset; flex: 1; min-width: 0; cursor: pointer;" @click="router.push('/task/' + x.id)">
+              <div class="bf-row__title">{{ x.title }}</div>
+              <div class="bf-row__sub" :style="x.due_date < todayISOv ? 'color: var(--danger);' : ''">{{ x.due_date < todayISOv ? t('tgOver') + ' · ' + dateShort(x.due_date) : t('today') }}{{ x.due_time ? ' · ' + String(x.due_time).slice(0, 5) : '' }}{{ memberById(x.assignee_id) ? ' · ' + memberById(x.assignee_id).name : '' }}</div>
+            </button>
+            <div v-if="x.amount" class="bf-row__amount" style="font-size: 14px;">{{ money0(x.amount) }}</div>
+          </div>
+          <button v-if="shoppingLeft.length" type="button" class="bf-row bf-row--tap" @click="router.push({ path: '/tasks', query: { tab: 'shopping' } })">
+            <div class="bf-row__icon"><Icon name="cart" /></div>
+            <div class="bf-row__body"><div class="bf-row__title">{{ t('shopLeft', shoppingLeft.length) }}</div><div class="bf-row__sub">{{ shoppingLeft.slice(0, 4).map((x) => x.name).join(', ') }}{{ shoppingLeft.length > 4 ? '…' : '' }}</div></div>
+            <span class="chev" aria-hidden="true">›</span>
+          </button>
+        </div>
       </section>
       <ForecastCard v-if="key === 'forecast'" />
       <EmergencyCard v-if="key === 'emergency'" />

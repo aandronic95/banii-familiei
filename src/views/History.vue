@@ -29,8 +29,8 @@ async function load(more = false) {
 }
 onMounted(() => load())
 
-const TBL = { transactions: 'list', accounts: 'card', categories: 'chart', loans: 'bank', investments: 'chart', debts: 'users', goals: 'piggy', recurring: 'clock', cars: 'car', car_events: 'car' }
-const KEY = { transactions: 'transactions', car_events: 'carEvents', debts: 'debts', goals: 'goals', recurring: 'recurring', investments: 'investments' }
+const TBL = { transactions: 'list', accounts: 'card', categories: 'chart', loans: 'bank', investments: 'chart', debts: 'users', goals: 'piggy', recurring: 'clock', cars: 'car', car_events: 'car', tasks: 'check' }
+const KEY = { transactions: 'transactions', car_events: 'carEvents', debts: 'debts', goals: 'goals', recurring: 'recurring', investments: 'investments', tasks: 'tasks' }
 
 function curOf(r) { return accountById(r.account_id)?.currency || r.currency || 'MDL' }
 function label(tbl, r) {
@@ -45,14 +45,15 @@ function label(tbl, r) {
 }
 
 // Ce s-a schimbat, pe înțeles
-const FIELDS = ['amount', 'date', 'merchant', 'category_id', 'account_id', 'kind', 'note', 'name', 'title', 'budget', 'rate', 'opening_balance', 'due_date', 'current_value', 'status', 'archived']
+const FIELDS = ['done', 'due_date', 'assignee_id', 'amount', 'date', 'merchant', 'category_id', 'account_id', 'kind', 'note', 'name', 'title', 'budget', 'rate', 'opening_balance', 'due_date', 'current_value', 'status', 'archived']
 function show(field, v) {
   if (v === null || v === undefined || v === '') return '—'
   if (field === 'category_id') return catName(categoryById(v)) || '—'
   if (field === 'account_id') return accountById(v)?.name || '—'
   if (field === 'date' || field === 'due_date') return dateShort(v, true)
   if (field === 'kind') return t('kind_' + v)
-  if (field === 'archived') return v ? t('yes') : t('no')
+  if (field === 'archived' || field === 'done') return v ? t('yes') : t('no')
+  if (field === 'assignee_id') return memberById(v)?.name || t('taskAnyone')
   if (typeof v === 'number' || /^-?\d+(\.\d+)?$/.test(String(v))) return money(v)
   return String(v).slice(0, 40)
 }

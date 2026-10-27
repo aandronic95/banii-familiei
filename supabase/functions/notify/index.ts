@@ -1,8 +1,10 @@
+// deno-lint-ignore-file no-explicit-any
 // Notificări programate (rulate zilnic și săptămânal din GitHub Actions) + actualizare curs BNM.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { loanForRecurring, nextOccurrence, nextUnpaid } from "../_shared/loan.ts";
 import { ratesFor } from "../_shared/bnm.ts";
+import { nowLocalHM, taskButtons, taskLine, T as TT } from "../_shared/tasks.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
 const APP_URL = Deno.env.get("APP_URL") ?? "";
@@ -318,6 +320,50 @@ async function evening(today: string) {
   }
 }
 
+// ───────── Sarcini ─────────
+// Dimineața: fiecare primește sarcinile lui (și cele „pentru oricine”) de azi și întârziate
+async function tasksDigest(today: string) {
+  const { data: families } = await db.from("families").select("id");
+  for (const f of families ?? []) {
+    const { data: open } = await db.from("tasks").select("*").eq("family_id", f.id).eq("done", false).not("due_date", "is", null).lte("due_date", today).order("due_date");
+    if (!open?.length) continue;
+    const { data: mem } = await db.from("members").select("id, name, telegram_id, lang, role, notify").eq("family_id", f.id);
+    for (const m of mem ?? []) {
+      if (!m.telegram_id || m.role === "none" || m.notify?.tasks === false) continue;
+      const mine = open.filter((t) => !t.assignee_id || t.assignee_id === m.id)
+      if (!mine.length || !(await once(`tdigest:${m.id}:${today}`))) continue;
+      const lg = m.lang === "ru" ? "ru" : "ro";
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id, text: TT[lg].digest(mine.length) });
+      for (const t of mine.slice(0, 8)) {
+        await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id, text: taskLine(t, lg, mem ?? [], today), reply_markup: taskButtons(t, lg, APP_URL) });
+      }
+    }
+  }
+}
+
+// La fiecare 15 minute: mementoul sarcinilor cu oră, când a venit ora
+async function tasksRemind(today: string) {
+  const hm = nowLocalHM();
+  const { data: due } = await db.from("tasks").select("*").eq("done", false).eq("due_date", today).not("due_time", "is", null).lte("due_time", hm + ":59");
+  if (!due?.length) return;
+  const byFam: Record<string, any[]> = {};
+  for (const t of due) (byFam[t.family_id] ??= []).push(t);
+  for (const [fid, list] of Object.entries(byFam)) {
+    const { data: mem } = await db.from("members").select("id, name, telegram_id, lang, role, notify").eq("family_id", fid);
+    for (const t of list) {
+      if (!(await once(`tremind:${t.id}:${today}`))) continue;
+      const to = (mem ?? []).filter((m) => m.telegram_id && m.role !== "none" && m.notify?.tasks !== false && (!t.assignee_id || t.assignee_id === m.id));
+      for (const m of to) {
+        const lg = m.lang === "ru" ? "ru" : "ro";
+        await tg(BOT_TOKEN, "sendMessage", {
+          chat_id: m.telegram_id, text: TT[lg].remind + "\n" + taskLine(t, lg, mem ?? [], today) + (t.kind === "money" ? "\n" + TT[lg].money : ""),
+          reply_markup: taskButtons(t, lg, APP_URL),
+        });
+      }
+    }
+  }
+}
+
 // Pe 1 ale lunii: concluzia lunii trecute (unde s-au dus banii, ce a crescut, cât ați economisit)
 const MONTHS = {
   ro: ["ianuarie", "februarie", "martie", "aprilie", "mai", "iunie", "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie"],
@@ -409,9 +455,11 @@ Deno.serve(async (req) => {
   if (task === "weekly") await weekly(today);
   else if (task === "monthly") await monthly(today);
   else if (task === "evening") await evening(today);
+  else if (task === "remind") await tasksRemind(today);
   else {
     await daily(today);
     await fxAlerts(today).catch((e) => console.error("fx", e));
+    await tasksDigest(today).catch((e) => console.error("tasks", e));
     // Istoricul modificărilor se păstrează un an
     await db.from("audit_log").delete().lt("at", new Date(Date.now() - 365 * 86400000).toISOString());
   }
