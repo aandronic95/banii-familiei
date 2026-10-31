@@ -418,3 +418,23 @@ test('sarcini scrise în cuvinte (aplicație = server)', async () => {
   if (taskTs) for (const x of ['sarcină: schimbă uleiul vineri la 18:00 pentru Andrian', 'plătește lumina 450 lei pe 15', 'cumpără: lapte, pâine 2', 'в пятницу забрать посылку для Аны'])
     assert.deepEqual(taskTs.parseTask(x, o), js.parseTask(x, o))
 })
+
+test('bot: alegerea contului după mesaj', async () => {
+  const q = await import('../supabase/functions/_shared/quick.ts')
+  const accs = [
+    { id: 'c', name: 'Portofel', type: 'cash', currency: 'MDL', sort: 1 },
+    { id: 'a', name: 'MAIB Visa', type: 'card', currency: 'MDL', sort: 2 },
+    { id: 'r', name: 'Revolut', type: 'card', currency: 'EUR', sort: 3 },
+    { id: 'x', name: 'Vechi', type: 'card', currency: 'MDL', sort: 4, archived: true },
+    { id: 'm', name: 'Skoda', type: 'asset', currency: 'EUR', sort: 5 },
+  ]
+  const ch = q.accountChoices(accs)
+  assert.deepEqual(ch.map((a) => a.id), ['c', 'a', 'r'])
+  assert.equal(q.convertAmount(45, 'MDL', 'EUR', { EUR: 19.5, USD: 17.9 }), 2.31)
+  assert.equal(q.convertAmount(10, 'EUR', 'MDL', { EUR: 19.5 }), 195)
+  assert.equal(q.convertAmount(45, 'MDL', 'MDL', {}), 45)
+  const kb = q.accountKeyboard('11111111-1111-4111-8111-111111111111', ch, 'a', false, 'https://x/')
+  assert.deepEqual(kb.inline_keyboard[0].map((b) => b.text), ['💵 Portofel', '✓ MAIB Visa'])
+  assert.equal(kb.inline_keyboard[1][0].text, '💳 Revolut · EUR')
+  assert.ok(kb.inline_keyboard.flat().every((b) => !b.callback_data || b.callback_data.length <= 64)) // limita Telegram
+})

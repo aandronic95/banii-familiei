@@ -3,7 +3,7 @@
 import { bigSpendAlert } from "../_shared/alert.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
-import { parseQuick, pickAccount } from "../_shared/quick.ts";
+import { accountChoices, accountKeyboard, convertAmount, parseQuick, pickAccount } from "../_shared/quick.ts";
 import { parseTask } from "../_shared/taskparse.ts";
 import { completeTask, taskButtons, taskLine, T as TT, dmy } from "../_shared/tasks.ts";
 
@@ -17,8 +17,8 @@ const fmt = (n: number) => n.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+
 const ok = () => new Response("ok");
 
 const HELP = {
-  ro: "Scrie-mi o cheltuială și o salvez:\n• <code>cafea 45</code>\n• <code>benzină 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+salariu 14200</code> (venit)\n\nPoți scrie mai multe, câte una pe rând. Contul: „cash” sau numele cardului; altfel se ia primul tău card.\n\n<b>Sarcini</b>\n• <code>sarcină: schimbă uleiul vineri la 18:00</code>\n• <code>sarcină: plătește lumina 450 lei pe 15 pentru Ana</code>\n• <code>sarcină: udă florile în fiecare sâmbătă</code>\n• <code>cumpără: lapte, pâine 2, ouă</code>\n/sarcini — ce e deschis · /cumparaturi — lista",
-  ru: "Напишите расход, и я его сохраню:\n• <code>кофе 45</code>\n• <code>бензин 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+зарплата 14200</code> (доход)\n\nМожно несколько, по одному в строке. Счёт: «cash» или название карты; иначе первая ваша карта.\n\n<b>Задачи</b>\n• <code>задача: поменять масло в пятницу в 18:00</code>\n• <code>задача: оплатить свет 450 лей до 15 для Анны</code>\n• <code>купить: молоко, хлеб 2, яйца</code>\n/sarcini — открытые задачи · /cumparaturi — список",
+  ro: "Scrie-mi o cheltuială și o salvez:\n• <code>cafea 45</code>\n• <code>benzină 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+salariu 14200</code> (venit)\n\nPoți scrie mai multe, câte una pe rând. Contul: „cash” sau numele cardului; altfel se ia primul tău card, iar sub mesaj alegi alt cont cu un buton.\n\n<b>Sarcini</b>\n• <code>sarcină: schimbă uleiul vineri la 18:00</code>\n• <code>sarcină: plătește lumina 450 lei pe 15 pentru Ana</code>\n• <code>sarcină: udă florile în fiecare sâmbătă</code>\n• <code>cumpără: lapte, pâine 2, ouă</code>\n/sarcini — ce e deschis · /cumparaturi — lista",
+  ru: "Напишите расход, и я его сохраню:\n• <code>кофе 45</code>\n• <code>бензин 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+зарплата 14200</code> (доход)\n\nМожно несколько, по одному в строке. Счёт: «cash» или название карты; иначе первая ваша карта, а под сообщением можно выбрать другой счёт кнопкой.\n\n<b>Задачи</b>\n• <code>задача: поменять масло в пятницу в 18:00</code>\n• <code>задача: оплатить свет 450 лей до 15 для Анны</code>\n• <code>купить: молоко, хлеб 2, яйца</code>\n/sarcini — открытые задачи · /cumparaturi — список",
 };
 
 async function memberByTelegram(tgId: number) {
@@ -74,6 +74,23 @@ async function saveQuick(member: { id: string; family_id: string; user_id: strin
   return { tx, q, account, cat };
 }
 
+// Ultimul curs salvat (câți MDL face 1 EUR / 1 USD)
+async function latestRates(): Promise<Record<string, number>> {
+  const out: Record<string, number> = { MDL: 1 };
+  for (const c of ["EUR", "USD"]) {
+    const { data } = await db.from("rates").select("rate").eq("currency", c).order("date", { ascending: false }).limit(1);
+    if (data?.[0]) out[c] = Number(data[0].rate);
+  }
+  return out;
+}
+// Textul mesajului de după o cheltuială (același la salvare și după schimbarea contului)
+// deno-lint-ignore no-explicit-any
+function txText(tx: any, account: any, catName: string, ru: boolean, chosen: boolean) {
+  const sign = tx.kind === "income" ? "+" : "−";
+  const head = `✅ ${sign}${fmt(Number(tx.amount))} ${account.currency}${tx.merchant ? " · " + tx.merchant : ""} · ${catName}`;
+  return chosen ? `${head}\n${ru ? "Счёт" : "Contul"}: ${account.name}` : `${head}\n${ru ? "Со счёта" : "Din contul"}: ${account.name}\n${ru ? "Другой счёт? Нажмите ниже:" : "Alt cont? Alege mai jos:"}`;
+}
+
 // deno-lint-ignore no-explicit-any
 async function notifyAssignee(task: any, byName: string) {
   const { data: a } = await db.from("members").select("telegram_id, lang, notify, role").eq("id", task.assignee_id).maybeSingle();
@@ -103,6 +120,46 @@ Deno.serve(async (req) => {
           chat_id: cb.message.chat.id, message_id: cb.message.message_id,
           text: (ru ? "↩️ Отменено: " : "↩️ Anulat: ") + (cb.message.text ?? "").replace(/^✅ /, ""),
         });
+      }
+    } else if (member && action === "acc" && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
+      // „Alege contul”: mută cheltuiala pe contul ales (cu conversie, dacă moneda diferă)
+      const idx = Number(String(cb.data).split(":")[2]);
+      const [{ data: tx }, { data: accs }] = await Promise.all([
+        db.from("transactions").select("id, kind, amount, account_id, merchant, category_id, note").eq("id", id).eq("family_id", member.family_id).maybeSingle(),
+        db.from("accounts").select("id, name, type, currency, sort, archived, bank, last4, wallet_alias, member_id").eq("family_id", member.family_id),
+      ]);
+      const list = accountChoices(accs ?? []);
+      const to = list[idx];
+      if (!tx || !to) {
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: ru ? "Операция не найдена" : "Nu mai găsesc cheltuiala" });
+      } else {
+        const from = (accs ?? []).find((a) => a.id === tx.account_id);
+        let amount = Number(tx.amount);
+        let note = tx.note;
+        if (to.id !== tx.account_id && from) {
+          // Suma inițială rămâne în notă („inițial 45,00 MDL”), ca mutările repetate să nu piardă din rotunjiri
+          const ORIG = /\s*·?\s*(?:inițial|изначально) ([\d ]+,\d{2}) (MDL|EUR|USD)$/;
+          const m = (tx.note ?? "").match(ORIG);
+          const origAmt = m ? Number(m[1].replace(/\s/g, "").replace(",", ".")) : Number(tx.amount);
+          const origCur = m ? m[2] : from.currency;
+          const base = (tx.note ?? "").replace(ORIG, "");
+          if (to.currency === origCur) { amount = origAmt; note = base || null; }
+          else {
+            amount = convertAmount(origAmt, origCur, to.currency, await latestRates());
+            note = `${base ? base + " · " : ""}${ru ? "изначально" : "inițial"} ${fmt(origAmt)} ${origCur}`;
+          }
+          await db.from("transactions").update({ account_id: to.id, amount, note }).eq("id", tx.id);
+        }
+        const { data: cat } = tx.category_id ? await db.from("categories").select("name_ro, name_ru").eq("id", tx.category_id).maybeSingle() : { data: null };
+        const catName = cat ? (ru ? cat.name_ru : cat.name_ro) : (ru ? "без категории" : "fără categorie");
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: "✓ " + to.name });
+        if (cb.message) {
+          await tg(BOT_TOKEN, "editMessageText", {
+            chat_id: cb.message.chat.id, message_id: cb.message.message_id,
+            text: txText({ ...tx, amount }, to, catName, ru, true),
+            reply_markup: accountKeyboard(tx.id, list, to.id, ru, APP_URL),
+          });
+        }
       }
     } else if (member && action === "tdone" && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
       // „✅ Gata” din mesajul botului
@@ -211,6 +268,7 @@ Deno.serve(async (req) => {
 
   // ── Cheltuieli scrise direct, câte una pe rând (max. 10) ──
   const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean).slice(0, 10);
+  const { data: allAccounts } = await db.from("accounts").select("id, name, type, currency, sort, archived, bank, last4, wallet_alias, member_id").eq("family_id", member.family_id);
   let savedAny = false;
   for (const line of lines) {
     const r = await saveQuick(member, line);
@@ -220,15 +278,15 @@ Deno.serve(async (req) => {
       continue;
     }
     savedAny = true;
-    const sign = r.q.kind === "income" ? "+" : "−";
     const catName = r.cat ? (ru ? r.cat.name_ru : r.cat.name_ro) : (ru ? "без категории" : "fără categorie");
+    // Salvată pe contul cel mai probabil; dedesubt, toate conturile — o atingere o mută pe altul
+    const choices = accountChoices(allAccounts ?? []);
+    const named = !!(r.q.cash || r.q.accountWord && choices.some((a) => (r.q.accountWord ?? "").includes(a.name.toLowerCase().split(" ")[0])));
     await tg(BOT_TOKEN, "sendMessage", {
       chat_id: chatId,
-      text: `✅ ${sign}${fmt(r.q.amount)} ${r.account.currency}${r.q.description ? " · " + r.q.description : ""} · ${catName} · ${r.account.name}`,
-      reply_markup: { inline_keyboard: [[
-        { text: ru ? "Изменить" : "Modifică", web_app: { url: `${APP_URL}?tx=${r.tx.id}` } },
-        { text: ru ? "Отменить" : "Anulează", callback_data: `del:${r.tx.id}` },
-      ]] },
+      text: txText({ kind: r.q.kind, amount: r.q.amount, merchant: r.q.description }, r.account, catName, ru, named || choices.length < 2),
+      reply_markup: choices.length > 1 ? accountKeyboard(r.tx.id, choices, r.account.id, ru, APP_URL)
+        : { inline_keyboard: [[{ text: ru ? "Изменить" : "Modifică", web_app: { url: `${APP_URL}?tx=${r.tx.id}` } }, { text: ru ? "Отменить" : "Anulează", callback_data: `del:${r.tx.id}` }]] },
     });
   }
   if (!savedAny) {

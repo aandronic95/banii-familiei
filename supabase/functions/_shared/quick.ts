@@ -90,3 +90,35 @@ export function pickAccount(q: Quick, accounts: Acc[], memberId?: string | null)
   }
   return matchAccount("", q.currency, list, memberId).account ?? list[0] ?? null;
 }
+
+// ── Alegerea contului din mesajul botului ──
+// Conturile cu bani (fără bunuri și arhivate), în ordinea din aplicație; indexul din buton trimite la ele.
+export function accountChoices<T extends Acc & { sort?: number | null; type: string }>(accounts: T[]): T[] {
+  return accounts.filter((a) => !a.archived && a.type !== "asset")
+    .sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.name.localeCompare(b.name))
+    .slice(0, 12);
+}
+
+// Suma mutată pe un cont în altă monedă (cursul BNM: câți MDL face 1 unitate)
+export function convertAmount(amount: number, from: string, to: string, rates: Record<string, number>): number {
+  if (from === to) return amount;
+  const a = rates[from] ?? (from === "MDL" ? 1 : NaN), b = rates[to] ?? (to === "MDL" ? 1 : NaN);
+  if (!(a > 0) || !(b > 0)) return amount;
+  return Math.round(((amount * a) / b) * 100) / 100;
+}
+
+// Tastatura: conturile câte două pe rând (✓ la cel ales), apoi Modifică / Anulează
+export function accountKeyboard(txId: string, accounts: { id: string; name: string; currency: string; type: string }[], currentId: string, ru: boolean, appUrl: string) {
+  const icon = (a: { type: string }) => (a.type === "cash" ? "💵" : a.type === "deposit" ? "🏦" : a.type === "invest" ? "📈" : "💳");
+  const btn = accounts.map((a, i) => ({
+    text: `${a.id === currentId ? "✓ " : icon(a) + " "}${a.name}${a.currency !== "MDL" ? " · " + a.currency : ""}`.slice(0, 40),
+    callback_data: `acc:${txId}:${i}`,
+  }));
+  const rows: { text: string; callback_data?: string; web_app?: { url: string } }[][] = [];
+  for (let i = 0; i < btn.length; i += 2) rows.push(btn.slice(i, i + 2));
+  rows.push([
+    { text: ru ? "Изменить" : "Modifică", web_app: { url: `${appUrl}?tx=${txId}` } },
+    { text: ru ? "Отменить" : "Anulează", callback_data: `del:${txId}` },
+  ]);
+  return { inline_keyboard: rows };
+}
