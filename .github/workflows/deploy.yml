@@ -123,9 +123,22 @@ jobs:
         with:
           version: latest
       - name: Leagă proiectul Supabase
-        run: supabase link --project-ref "$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD"
+        run: |
+          supabase --version
+          # Mesajul de eroare apare ca adnotare în rezumatul publicării (fără parolă: CLI-ul n-o afișează)
+          if ! supabase link --project-ref "$PROJECT_REF" -p "$SUPABASE_DB_PASSWORD" > /tmp/link.log 2>&1; then
+            cat /tmp/link.log
+            echo "::error title=Legarea proiectului Supabase::$(grep -v '^\s*$' /tmp/link.log | tail -4 | tr '\n' ' ' | cut -c1-600)"
+            exit 1
+          fi
       - name: Aplică schema bazei de date
-        run: supabase db push -p "$SUPABASE_DB_PASSWORD"
+        run: |
+          if ! supabase db push -p "$SUPABASE_DB_PASSWORD" > /tmp/push.log 2>&1; then
+            cat /tmp/push.log
+            echo "::error title=Schema bazei de date::$(grep -v '^\s*$' /tmp/push.log | tail -4 | tr '\n' ' ' | cut -c1-600)"
+            exit 1
+          fi
+          cat /tmp/push.log
       - name: Setează secretele serverului
         run: |
           supabase secrets set --project-ref "$PROJECT_REF" \
