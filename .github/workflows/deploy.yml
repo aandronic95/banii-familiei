@@ -47,6 +47,13 @@ jobs:
             echo "::error::Lipsesc secretele SUPABASE_ACCESS_TOKEN și/sau TELEGRAM_BOT_TOKEN (Settings → Secrets and variables → Actions → Secrets)."
             exit 1
           fi
+          # Tokenul de acces Supabase poate expira: verificăm din primul pas, cu un mesaj clar
+          if ! supabase projects list > /tmp/pl.log 2>&1; then
+            if grep -qi "invalid access token\|unauthorized" /tmp/pl.log; then
+              echo "::error title=Tokenul Supabase nu mai e valid::SUPABASE_ACCESS_TOKEN a expirat sau a fost șters. Generează unul nou (supabase.com → avatar → Account preferences → Access Tokens → Generate new token, fără expirare) și pune-l în Settings → Secrets and variables → Actions → SUPABASE_ACCESS_TOKEN, apoi rulează din nou Publicare."
+              exit 1
+            fi
+          fi
           # Cheia publică a proiectului (nu cea secretă!) — e făcută să stea în aplicație
           KEY="$VAR_KEY"
           if [ -z "$KEY" ]; then
