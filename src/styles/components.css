@@ -76,7 +76,9 @@
 .anum { font-variant-numeric: tabular-nums; transition: color .5s ease; }
 .anum--up { color: var(--income); }
 .anum--down { color: var(--expense); }
-.live { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line, rgba(127,127,127,.18)); font: 500 13px/18px var(--font-sans); color: var(--ink-muted); }
+.live { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; white-space: nowrap; min-width: 0; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line, rgba(127,127,127,.18)); font: 500 13px/18px var(--font-sans); color: var(--ink-muted); }
+.live > span:not(.live-dot):not(:last-child) { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.live b, .live > span:last-child { flex: none; }
 .live b { color: var(--income); font-variant-numeric: tabular-nums; font-weight: 600; }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--income); flex: none; box-shadow: 0 0 0 0 var(--income); animation: live-pulse 2s infinite; }
 @keyframes live-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--income) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
