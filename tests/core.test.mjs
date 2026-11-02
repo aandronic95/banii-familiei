@@ -599,3 +599,14 @@ test('demo: date inventate coerente și client fără server', async () => {
   assert.equal(up.data.amount, 7); assert.equal(up.data.account_id, d.transactions[0].account_id)
   assert.equal((await c.functions.invoke('docs')).error, null)
 })
+
+test('ghid: text sigur și comparația versiunilor', async () => {
+  const { rich, compareVersion, GUIDE } = await import('../src/lib/guide.js')
+  assert.equal(rich('**A** `b` <i> [x](https://g.com/a)'), '<b>A</b> <code>b</code> &lt;i&gt; <a href="https://g.com/a" data-ext="1">x</a>')
+  assert.equal(rich('[x](javascript:alert(1))'), '[x](javascript:alert(1))')
+  assert.equal(compareVersion({ sha: 'abc1234' }, { sha: 'abc1234def' }), 'current')
+  assert.equal(compareVersion({ sha: 'aaa', date: '2026-11-01T10:00:00Z' }, { sha: 'bbb', date: '2026-11-02T10:00:00Z' }), 'behind')
+  assert.equal(compareVersion({ sha: '' }, { sha: 'x' }), 'unknown')
+  assert.deepEqual(GUIDE.ro.map((s) => s.id), GUIDE.ru.map((s) => s.id))
+  for (const l of ['ro', 'ru']) for (const s of GUIDE[l]) assert.deepEqual(s.parts.map((p) => Object.keys(p)[0]), GUIDE.ro.find((x) => x.id === s.id).parts.map((p) => Object.keys(p)[0]))
+})

@@ -1,5 +1,6 @@
 <script setup>
-import { reactive, computed, ref, watch } from 'vue'
+import { reactive, computed, ref, watch, onMounted } from 'vue'
+import { updateStatus, isUpstream } from '../lib/version.js'
 import { useRouter } from 'vue-router'
 import { S, me, save, savePrefs, setRate, refreshRates, debtMdl, investMdl, debtsSummary, activeTrip, enterDemo, exitDemo } from '../store.js'
 import { t, lang, setLang } from '../lib/i18n.js'
@@ -147,7 +148,11 @@ async function openLink_(to) {
   }
   router.push(to)
 }
+// Versiune nouă în depozitul original? (memorat 6 ore, ca să nu întrebăm GitHub la fiecare deschidere)
+const behind = ref(false)
+onMounted(() => { if (!isUpstream()) updateStatus().then((v) => { behind.value = v.state === 'behind' }).catch(() => {}) })
 const links = computed(() => [
+  { to: '/guide', icon: 'list', title: t('guideTitle'), sub: behind.value ? '🆕 ' + t('verBehindShort') : t('guideSub') },
   { to: '/calendar', icon: 'clock', title: t('calendarTitle'), sub: t('calendarSub') },
   { to: '/goals', icon: 'piggy', title: t('goalsTitle'), sub: S.goals.length ? S.goals.map((g) => g.name).slice(0, 3).join(', ') : t('goalsSub') },
   { to: '/debts', icon: 'users', title: t('debtsTitle'), sub: debtsSummary.value.owed || debtsSummary.value.owe ? `+${money0(debtsSummary.value.owed)} / −${money0(debtsSummary.value.owe)} MDL` : t('debtsSub') },

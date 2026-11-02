@@ -87,8 +87,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: echo "VITE_APP_DATE=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
       - run: npm run build
         env:
+          VITE_APP_SHA: ${{ github.sha }}
+          VITE_REPO: ${{ github.repository }}
           BASE_PATH: /${{ github.event.repository.name }}/
           VITE_SUPABASE_URL: https://${{ needs.config.outputs.ref }}.supabase.co
           VITE_SUPABASE_KEY: ${{ needs.config.outputs.key }}

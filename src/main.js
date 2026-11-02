@@ -36,6 +36,7 @@ const routes = [
   { path: '/wishes', name: 'wishes', component: () => import('./views/Wishes.vue') },
   { path: '/trips', name: 'trips', component: () => import('./views/Trips.vue') },
   { path: '/prices', name: 'prices', component: () => import('./views/Prices.vue') },
+  { path: '/guide', name: 'guide', component: () => import('./views/Guide.vue') },
   { path: '/events', name: 'events', component: () => import('./views/Events.vue') },
   { path: '/tasks', name: 'tasks', component: () => import('./views/Tasks.vue') },
   { path: '/task/:id', name: 'task', component: () => import('./views/TaskForm.vue'), meta: { form: true } },
