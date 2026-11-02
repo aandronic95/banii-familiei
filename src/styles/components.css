@@ -19,6 +19,9 @@
 .bf-balance__amount { font: 700 34px/40px var(--font-sans); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: var(--space-1); }
 .bf-balance__cur { font-size: 20px; font-weight: 600; color: var(--ink-muted); margin-left: var(--space-1); }
 .bf-balance__meta { display: flex; gap: var(--space-4); margin-top: var(--space-3); font: 500 13px/18px var(--font-sans); color: var(--ink-muted); }
+.meta-one { flex-wrap: nowrap; gap: 12px; white-space: nowrap; overflow: hidden; }
+.meta-one > span { min-width: 0; }
+.meta-one > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .bf-balance__meta b { font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* Amount colors */

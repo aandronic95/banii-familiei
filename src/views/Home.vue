@@ -147,10 +147,9 @@ async function recSkip(r) {
     <button type="button" class="bf-card" style="border: 0; text-align: left; color: inherit; cursor: pointer;" @click="router.push('/accounts')">
       <div class="bf-balance__label">{{ t('availableAll') }}</div>
       <div class="bf-balance__amount"><AnimatedNumber :value="totalMdl" /><span class="bf-balance__cur">MDL</span></div>
-      <div class="bf-balance__meta" style="flex-wrap: wrap;">
-        <span>{{ t('month') }}: <b class="bf-income">+{{ money0(month.inc) }}</b></span>
-        <span><b class="bf-expense">−{{ money0(month.exp) }}</b></span>
-        <span v-if="growth.invest > 0">{{ t('investments') }}: <b><AnimatedNumber :value="growth.invest" :decimals="0" :flash="false" /></b></span>
+      <div class="bf-balance__meta meta-one">
+        <span>{{ t('month') }}: <b class="bf-income">+{{ money0(month.inc) }}</b> <b class="bf-expense">−{{ money0(month.exp) }}</b></span>
+        <span v-if="growth.invest > 0">{{ t('investShort') }}: <b><AnimatedNumber :value="growth.invest" :decimals="0" :flash="false" /></b></span>
         <span v-if="debtMdl > 0">{{ t('debts') }}: <b>{{ money0(debtMdl) }}</b></span>
       </div>
       <div v-if="growth.perDay > 0" class="live" @click.stop="router.push('/investments')">
