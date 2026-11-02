@@ -78,16 +78,17 @@ onMounted(() => {
 
 // Linkuri directe din mesajele botului: ?tx=<id> (cheltuială), ?task=<id> (sarcină), ?view=shopping (cumpărături)
 const qs = new URLSearchParams(location.search)
-const deep = { tx: qs.get('tx'), task: qs.get('task'), view: qs.get('view') }
+const deep = { tx: qs.get('tx'), task: qs.get('task'), view: qs.get('view'), rec: qs.get('rec') }
 watch(() => S.status, (st) => {
-  if (st !== 'ready' || !(deep.tx || deep.task || deep.view)) return
+  if (st !== 'ready' || !(deep.tx || deep.task || deep.view || deep.rec)) return
   history.replaceState(null, '', location.pathname)
   const uuid = /^[0-9a-f-]{36}$/i
   if (deep.tx && uuid.test(deep.tx)) router.push('/tx/' + deep.tx)
   else if (deep.task && uuid.test(deep.task)) router.push('/task/' + deep.task)
+  else if (deep.rec && uuid.test(deep.rec)) router.push({ path: '/tx/new', query: { rec: deep.rec } })
   else if (deep.view === 'shopping') router.push({ path: '/tasks', query: { tab: 'shopping' } })
   else if (deep.view === 'tasks') router.push('/tasks')
-  deep.tx = deep.task = deep.view = null
+  deep.tx = deep.task = deep.view = deep.rec = null
 }, { immediate: true })
 
 watch(() => [route.fullPath, S.status], () => {

@@ -21,7 +21,7 @@ const ro = [
       { h: 'Planificare' },
       { list: [
         '**Bugete** pe categorii, cu avertizare la 80% și la depășire.',
-        '**Plăți regulate** și **credite**: apar în calendar și în prognoza soldului.',
+        '**Plăți recurente** și **credite**: apar în calendar și în prognoza soldului. Înainte să adauge o plată recurentă, botul întreabă „Au venit banii?”; una care pică în weekend sau de sărbătoare se poate muta pe ziua lucrătoare.',
         '**Călătorii**: buget în euro, cât mai poți cheltui pe zi; în zilele călătoriei cheltuielile primesc eticheta singure.',
         '**Obiective**, **Lista de dorințe**, **Zile de naștere**, **Contoare** (lumină, gaz, apă).',
       ] },
@@ -106,7 +106,7 @@ const ru = [
       { h: 'Планирование' },
       { list: [
         '**Бюджеты** по категориям, с предупреждением на 80% и при превышении.',
-        '**Регулярные платежи** и **кредиты**: в календаре и в прогнозе остатка.',
+        '**Регулярные платежи** и **кредиты**: в календаре и в прогнозе остатка. Перед добавлением регулярного платежа бот спрашивает «Деньги пришли?»; платёж, выпадающий на выходной или праздник, можно перенести на рабочий день.',
         '**Поездки**: бюджет в евро, сколько ещё можно тратить в день; в дни поездки расходы получают метку сами.',
         '**Цели**, **Список желаний**, **Дни рождения**, **Счётчики** (свет, газ, вода).',
       ] },

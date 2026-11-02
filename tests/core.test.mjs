@@ -610,3 +610,20 @@ test('ghid: text sigur și comparația versiunilor', async () => {
   assert.deepEqual(GUIDE.ro.map((s) => s.id), GUIDE.ru.map((s) => s.id))
   for (const l of ['ro', 'ru']) for (const s of GUIDE[l]) assert.deepEqual(s.parts.map((p) => Object.keys(p)[0]), GUIDE.ro.find((x) => x.id === s.id).parts.map((p) => Object.keys(p)[0]))
 })
+
+const wdTs = await import('../supabase/functions/_shared/workday.ts').catch((e) => { console.error(e); return null })
+test('zile lucrătoare: weekend, sărbători, Paște ortodox; aceeași logică pe server', { skip: !wdTs }, async () => {
+  const w = await import('../src/lib/workday.js')
+  assert.deepEqual([2025, 2026, 2027].map(w.orthodoxEaster), ['2025-04-20', '2026-04-12', '2027-05-02'])
+  assert.equal(w.shiftWorkday('2026-11-07', 'before'), '2026-11-06') // sâmbătă → vineri
+  assert.equal(w.shiftWorkday('2026-11-08', 'after'), '2026-11-09')  // duminică → luni
+  assert.equal(w.shiftWorkday('2026-12-25', 'before'), '2026-12-24') // Crăciun
+  assert.equal(w.shiftWorkday('2026-04-20', 'before'), '2026-04-17') // Paștele Blajinilor (luni) → vinerea dinainte
+  assert.equal(w.shiftWorkday('2027-01-08', 'after'), '2027-01-11')  // 7–8 ianuarie, apoi weekend
+  assert.equal(w.shiftWorkday('2026-11-07', 'none'), '2026-11-07')
+  for (const d of ['2026-01-01', '2026-03-08', '2026-08-27', '2026-11-05', '2027-05-03']) assert.equal(wdTs.isWorkday(d), w.isWorkday(d))
+  const fs = await import('node:fs')
+  const a = fs.readFileSync(new URL('../src/lib/workday.js', import.meta.url), 'utf8')
+  const b = fs.readFileSync(new URL('../supabase/functions/_shared/workday.ts', import.meta.url), 'utf8')
+  assert.equal(b.split('\n').slice(1).join('\n'), a)
+})

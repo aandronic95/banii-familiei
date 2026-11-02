@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, accountById, categoryById, toMdl } from '../store.js'
+import { S, accountById, categoryById, toMdl, recDue } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, money0, dateShort } from '../lib/format.js'
 import Icon from '../components/Icon.vue'
@@ -43,7 +43,7 @@ const icon = (r) => categoryById(r.category_id)?.icon || (r.kind === 'income' ? 
         <div class="bf-row__icon"><Icon :name="icon(r)" /></div>
         <div class="bf-row__body">
           <div class="bf-row__title">{{ r.name }}</div>
-          <div class="bf-row__sub">{{ t('recEveryLabel', r.every_months) }} · {{ r.active ? t('recNext', dateShort(r.next_date)) : t('paused') }}{{ r.category_id ? ' · ' + catName(categoryById(r.category_id)) : '' }}</div>
+          <div class="bf-row__sub">{{ t('recEveryLabel', r.every_months) }} · {{ r.active ? t('recNext', dateShort(recDue(r))) : t('paused') }}{{ r.category_id ? ' · ' + catName(categoryById(r.category_id)) : '' }}</div>
         </div>
         <div class="bf-row__amount" :class="r.kind === 'income' ? 'bf-income' : 'bf-expense'">
           {{ r.kind === 'income' ? '+' : '−' }}{{ money(r.amount) }}

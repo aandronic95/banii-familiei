@@ -12,6 +12,7 @@ import { schedule } from './lib/loan.js'
 import { nextDue, parseShopping } from './lib/taskparse.js'
 import { nextEventDate, turning, daysBetween as daysBetweenISO } from './lib/home.js'
 import { tripStats, tripOn } from './lib/trip.js'
+import { shiftWorkday } from './lib/workday.js'
 import { priceIndex } from './lib/prices.js'
 import { demoData, demoClient } from './lib/demo.js'
 
@@ -1022,9 +1023,10 @@ export function upcoming(from, to) {
   for (const r of S.recurring) {
     if (!r.active) continue
     let d = r.next_date, guard = 0
-    while (d <= to && guard++ < 40) {
+    while (shiftWorkday(d, r.workday) <= to && guard++ < 40) {
       // rata creditului apare deja mai sus; plata recurentă identică ar dubla-o
-      if (d >= from && !loanForRecurring(r, openLoans, d)) ev.push({ date: d, type: 'rec', title: r.name, amount: Number(r.amount), currency: accountById(r.account_id)?.currency || 'MDL', sign: r.kind === 'income' ? 1 : -1, to: '/recurring/' + r.id, recurring: r })
+      const dd = shiftWorkday(d, r.workday) // mutată de pe weekend/sărbătoare, dacă așa e setată
+      if (dd >= from && !loanForRecurring(r, openLoans, d)) ev.push({ date: dd, type: 'rec', title: r.name, amount: Number(r.amount), currency: accountById(r.account_id)?.currency || 'MDL', sign: r.kind === 'income' ? 1 : -1, to: '/recurring/' + r.id, recurring: r })
       d = nextOccurrence(d, r.every_months, r.day_of_month)
     }
   }
@@ -1070,8 +1072,42 @@ export const liquidMdl = computed(() =>
 // Următorul salariu: plată recurentă de venit (categoria „Salariu” sau numele conține „salar”)
 export const nextSalary = computed(() => {
   const cands = S.recurring.filter((r) => r.active && r.kind === 'income' && (/salar|зарплат/i.test(r.name) || categoryById(r.category_id)?.icon === 'wallet'))
-  return cands.sort((a, b) => a.next_date.localeCompare(b.next_date))[0] || null
+  const r = cands.map((x) => ({ ...x, next_date: recDue(x) })).sort((a, b) => a.next_date.localeCompare(b.next_date))[0]
+  return r || null
 })
+
+// ───────────── Plăți regulate cu confirmare ─────────────
+// Ziua plății după mutarea de pe weekend/sărbătoare
+export const recDue = (r, d = r.next_date) => shiftWorkday(d, r.workday || 'none')
+// Ce așteaptă confirmarea („A venit salariul?”)
+export const pendingRecurring = computed(() => {
+  const today = todayISO()
+  return S.recurring.filter((r) => r.active && r.auto_add && r.confirm && recDue(r) <= today && !loanForRecurring(r, S.loans.filter((l) => !l.closed)))
+    .sort((a, b) => recDue(a).localeCompare(recDue(b)))
+})
+// Trece la următoarea dată doar dacă n-a făcut-o deja altcineva (botul sau alt membru)
+export async function advanceRecurring(r) {
+  const from = r.next_date
+  const next = nextOccurrence(from, r.every_months, r.day_of_month)
+  if (!S.demo && !S.offline && navigator.onLine !== false) {
+    const { data, error } = await supabase.from('recurring').update({ next_date: next }).eq('id', r.id).eq('next_date', from).select()
+    if (error) throw error
+    if (!data?.length) { toast(tr('recAlready')); await loadAll().catch(() => {}); return false }
+    putLocal('recurring', data[0])
+    return true
+  }
+  await save('recurring', { id: r.id, next_date: next })
+  return true
+}
+// „Da, a venit”: tranzacția cu data de azi (ziua în care a venit de fapt)
+export async function confirmRecurring(r, over = {}) {
+  if (!(await advanceRecurring(r))) return null
+  const acc = accountById(r.account_id) && !accountById(r.account_id).archived ? r.account_id : activeAccounts.value.find((a) => a.type === 'card')?.id || activeAccounts.value[0]?.id
+  return save('transactions', {
+    kind: r.kind, amount: over.amount ?? Number(r.amount), account_id: over.account_id || acc, category_id: r.category_id || null,
+    member_id: r.member_id || me.value?.id || null, date: over.date || todayISO(), merchant: r.name, note: tr('recNote'), recurring_id: r.id,
+  })
+}
 
 // ───────────── Datorii și obiective ─────────────
 export const debtsSummary = computed(() => {

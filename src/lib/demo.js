@@ -103,8 +103,8 @@ export function demoData(today) {
       { ...base, id: 'dv3', kind: 'p2p', platform: 'Fagura', name: 'Împrumut business', code: '102611105904', amount: 150, units: null, rate: 13.9, start_date: d(90), maturity_date: d(-1700), coupon_freq: 'monthly', currency: 'EUR', status: 'active', member_id: 'dm1', account_id: null, current_value: null, value_date: null, note: null, created_at: d(90) },
     ],
     recurring: [
-      { ...base, id: 'dr1', kind: 'expense', name: 'Internet Starnet', amount: 250, account_id: 'da2', category_id: 'dc4', member_id: 'dm1', every_months: 1, day_of_month: 6, next_date: nextDom(today, 6), auto_add: true, remind: true, active: true, created_at: '2026-01-01' },
-      { ...base, id: 'dr2', kind: 'income', name: 'Salariu Ion', amount: 16500, account_id: 'da2', category_id: 'dc11', member_id: 'dm1', every_months: 1, day_of_month: 5, next_date: nextDom(today, 5), auto_add: true, remind: true, active: true, created_at: '2026-01-01' },
+      { ...base, id: 'dr1', kind: 'expense', name: 'Internet Starnet', amount: 250, account_id: 'da2', category_id: 'dc4', member_id: 'dm1', every_months: 1, day_of_month: 6, next_date: nextDom(today, 6), auto_add: true, confirm: true, workday: 'none', remind: true, active: true, created_at: '2026-01-01' },
+      { ...base, id: 'dr2', kind: 'income', name: 'Salariu Ion', amount: 16500, account_id: 'da2', category_id: 'dc11', member_id: 'dm1', every_months: 1, day_of_month: 5, next_date: nextDom(today, 5), auto_add: true, confirm: true, workday: 'before', remind: true, active: true, created_at: '2026-01-01' },
       { ...base, id: 'dr3', kind: 'expense', name: 'Netflix', amount: 9.99, account_id: 'da1', category_id: 'dc8', member_id: 'dm2', every_months: 1, day_of_month: 18, next_date: nextDom(today, 18), auto_add: true, remind: false, active: true, created_at: '2026-01-01' },
     ],
     debts: [{ ...base, id: 'dd1', direction: 'owed_to_us', person: 'Vasile', amount: 2000, paid: 500, currency: 'MDL', date: d(50), due_date: d(-9), member_id: 'dm1', note: null, settled: false, created_at: d(50) }],

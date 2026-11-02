@@ -3,8 +3,9 @@ import { reactive, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, me, save, remove, activeAccounts } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
-import { parseAmount, todayISO } from '../lib/format.js'
+import { parseAmount, todayISO, dateShort } from '../lib/format.js'
 import { loanForRecurring } from '../lib/loan.js'
+import { shiftWorkday } from '../lib/workday.js'
 import { confirmDialog, haptic } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
@@ -39,13 +40,17 @@ const f = reactive({
   every_months: orig?.every_months ?? 1,
   day_of_month: orig?.day_of_month ?? (Number(qp.day) || Number(todayISO().slice(8, 10))),
   next_date: orig?.next_date ?? '',
-  auto_add: orig?.auto_add ?? true,
+  // cum se adaugă: confirm = botul întreabă „A venit?”, auto = singură, remind = doar memento
+  mode: orig ? (!orig.auto_add ? 'remind' : orig.confirm === false ? 'auto' : 'confirm') : 'confirm',
+  workday: orig?.workday ?? (String(qp.kind || '') === 'income' ? 'before' : 'none'),
   remind: orig?.remind ?? true,
   active: orig?.active ?? true,
 })
 if (!f.next_date) f.next_date = firstDate(f.day_of_month)
 const loanDup = computed(() => (f.active === false ? null : loanForRecurring({ kind: f.kind, amount: parseAmount(f.amount), next_date: f.next_date || firstDate(f.day_of_month) }, S.loans)))
 watch(() => f.day_of_month, (d) => { const n = Math.min(31, Math.max(1, Number(d) || 1)); if (isNew) f.next_date = firstDate(n) })
+const shifted = computed(() => { const d = f.next_date && shiftWorkday(f.next_date, f.workday); return d && d !== f.next_date ? d : null })
+watch(() => f.kind, (k) => { if (isNew && f.workday === 'none' && k === 'income') f.workday = 'before' })
 const cats = computed(() => S.categories.filter((c) => c.kind === f.kind && !c.archived))
 const err = ref('')
 const busy = ref(false)
@@ -60,7 +65,7 @@ async function submit() {
       ...(orig ? { id: orig.id } : {}),
       kind: f.kind, name: f.name.trim(), amount, account_id: f.account_id || null, category_id: f.category_id || null,
       member_id: f.member_id || null, every_months: Number(f.every_months), day_of_month: Math.min(31, Math.max(1, Number(f.day_of_month) || 1)),
-      next_date: f.next_date || firstDate(f.day_of_month), auto_add: !!f.auto_add, remind: !!f.remind, active: !!f.active,
+      next_date: f.next_date || firstDate(f.day_of_month), auto_add: f.mode !== 'remind', confirm: f.mode === 'confirm', workday: f.workday, remind: !!f.remind, active: !!f.active,
     })
     haptic('success'); toast(t('saved')); router.back()
   } catch (e) { console.error(e); err.value = t('error', e) } finally { busy.value = false }
@@ -109,8 +114,21 @@ async function del() {
         <button v-for="m in S.members" :key="m.id" type="button" class="bf-chip" :class="{ 'bf-chip--on': f.member_id === m.id }" @click="f.member_id = m.id"><span :class="`bf-dot bf-p${m.color}`"></span>{{ m.name }}</button>
       </div>
     </div>
+    <div class="fld">
+      <span class="lbl">{{ t('recMode') }}</span>
+      <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+        <button v-for="m in ['confirm', 'auto', 'remind']" :key="m" type="button" :class="{ on: f.mode === m }" @click="f.mode = m">{{ t('recMode_' + m) }}</button>
+      </div>
+      <p class="hint" style="margin: 0;">{{ t('recModeHint_' + f.mode) }}</p>
+    </div>
+    <div class="fld">
+      <span class="lbl">{{ t('recWorkday') }}</span>
+      <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+        <button v-for="m in ['none', 'before', 'after']" :key="m" type="button" :class="{ on: f.workday === m }" @click="f.workday = m">{{ t('recWd_' + m) }}</button>
+      </div>
+      <p v-if="shifted" class="hint" style="margin: 0;">{{ t('recWdNext', dateShort(f.next_date), dateShort(shifted)) }}</p>
+    </div>
     <div class="bf-list">
-      <label class="bf-row" for="r-auto"><div class="bf-row__body"><div class="bf-row__title">{{ t('autoAdd') }}</div><div class="bf-row__sub">{{ t('autoAddSub') }}</div></div><input id="r-auto" v-model="f.auto_add" type="checkbox" class="sw"></label>
       <label class="bf-row" for="r-rem"><div class="bf-row__body"><div class="bf-row__title">{{ t('remindDay') }}</div><div class="bf-row__sub">{{ t('remindSub') }}</div></div><input id="r-rem" v-model="f.remind" type="checkbox" class="sw"></label>
       <label v-if="!isNew" class="bf-row" for="r-act"><div class="bf-row__body"><div class="bf-row__title">{{ t('stActive') }}</div></div><input id="r-act" v-model="f.active" type="checkbox" class="sw"></label>
     </div>

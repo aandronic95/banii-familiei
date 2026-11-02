@@ -5,6 +5,7 @@ import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { loanForRecurring, nextOccurrence, nextUnpaid } from "../_shared/loan.ts";
 import { ratesFor } from "../_shared/bnm.ts";
 import { weeklyText, type WeekTx } from "../_shared/weekly.ts";
+import { advance, askKeyboard, dueDate, RT } from "../_shared/recurring.ts";
 import { accruedInterest, couponDates } from "../_shared/invest.ts";
 import { nextEventDate, turning } from "../_shared/home.ts";
 import { nowLocalHM, taskButtons, taskLine, T as TT } from "../_shared/tasks.ts";
@@ -132,20 +133,36 @@ async function daily(today: string) {
       const dupLoan = loanForRecurring(r, openLoans ?? []);
       const acc = (famAccs ?? []).find((a) => a.id === r.account_id) ?? firstAcc;
       const sign = r.kind === "income" ? "+" : "−";
-      if (!dupLoan && r.remind && r.next_date === tomorrow && (await once(`rec-soon:${r.id}:${r.next_date}`))) {
+      const due = dueDate(r);
+      if (!dupLoan && r.remind && due === tomorrow && (await once(`rec-soon:${r.id}:${r.next_date}`))) {
         await send(members, "recurring", (lg) => T[lg].recSoon(r.name, sign, fmt(Number(r.amount)), acc?.currency ?? "MDL"));
       }
+      if (r.auto_add && r.confirm) {
+        // Cu confirmare: întrebăm o dată pe zi, cel mult 7 zile, până se răspunde
+        const late = daysBetween(due, today);
+        if (acc && !dupLoan && due <= today && late <= 7 && (await once(`recq:${r.id}:${r.next_date}:${today}`))) {
+          for (const m of members) {
+            if (m.notify?.recurring === false) continue;
+            const lg = m.lang === "ru" ? "ru" : "ro";
+            await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id, text: RT[lg].ask(r.name, sign, fmt(Number(r.amount)), acc.currency, late), reply_markup: askKeyboard(r, lg, APP_URL) });
+          }
+        }
+        if (dupLoan && due <= today) await advance(db, r, r.next_date);
+        continue;
+      }
       let next = r.next_date, guard = 0;
-      while (r.auto_add && acc && next <= today && guard++ < 6) {
+      while (r.auto_add && acc && dueDate(r, next) <= today && guard++ < 6) {
         if (!loanForRecurring(r, openLoans ?? [], next) && (await once(`rec:${r.id}:${next}`))) {
           await db.from("transactions").insert({
             family_id: f.id, kind: r.kind, amount: r.amount, account_id: acc.id, category_id: r.category_id,
-            member_id: r.member_id, date: next, merchant: r.name, note: "Plată recurentă", recurring_id: r.id,
+            member_id: r.member_id, date: dueDate(r, next), merchant: r.name, note: "Plată recurentă", recurring_id: r.id,
           });
           await send(members, "recurring", (lg) => T[lg].recAdded(r.name, sign, fmt(Number(r.amount)), acc.currency));
         }
         next = nextOccurrence(next, r.every_months, r.day_of_month);
       }
+      // doar memento: trecem la următoarea dată după ziua plății
+      while (!r.auto_add && dueDate(r, next) < today && guard++ < 6) next = nextOccurrence(next, r.every_months, r.day_of_month);
       if (next !== r.next_date) await db.from("recurring").update({ next_date: next }).eq("id", r.id);
     }
 

@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, isOwner, savePrefs, todayTasks, shoppingLeft, completeTask, reopenTask, memberById, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary } from '../store.js'
+import { S, me, isOwner, savePrefs, todayTasks, shoppingLeft, completeTask, reopenTask, memberById, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary, pendingRecurring, confirmRecurring, advanceRecurring, recDue } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
@@ -117,6 +117,16 @@ const alerts = computed(() => {
   }
   return out
 })
+// Plăți regulate care așteaptă „Da, a venit”
+const recBusy = ref(null)
+async function recYes(r) {
+  recBusy.value = r.id
+  try { if (await confirmRecurring(r)) haptic('success') } catch (e) { toast(t('error', e)) } finally { recBusy.value = null }
+}
+async function recSkip(r) {
+  recBusy.value = r.id
+  try { await advanceRecurring(r) } catch (e) { toast(t('error', e)) } finally { recBusy.value = null }
+}
 </script>
 
 <template>
@@ -150,6 +160,22 @@ const alerts = computed(() => {
         <span style="margin-left: auto;">{{ t('livePerDay', money(growth.perDay)) }}</span>
       </div>
     </button>
+
+    <section v-if="pendingRecurring.length" class="bf-card stack" aria-labelledby="recq-h">
+      <h2 id="recq-h" class="h-sec">{{ t('recConfirmTitle') }}</h2>
+      <div v-for="r in pendingRecurring" :key="r.id" class="stack" style="gap: 8px;">
+        <div class="kv" style="align-items: baseline;">
+          <span><b>{{ r.name }}</b> <span class="cap">· {{ dateShort(recDue(r)) }}</span></span>
+          <b :class="r.kind === 'income' ? 'bf-income' : 'bf-expense'" style="white-space: nowrap;">{{ r.kind === 'income' ? '+' : '−' }}{{ money0(r.amount) }} {{ accountById(r.account_id)?.currency || 'MDL' }}</b>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="bf-btn bf-btn--primary" style="min-height: 38px; flex: 1;" :disabled="recBusy === r.id" @click="recYes(r)">{{ r.kind === 'income' ? t('recCame') : t('recPaid') }}</button>
+          <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 38px;" @click="router.push({ path: '/tx/new', query: { rec: r.id } })">{{ t('recOther') }}</button>
+          <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 38px;" :disabled="recBusy === r.id" @click="recSkip(r)">{{ t('recSkip') }}</button>
+        </div>
+      </div>
+      <p class="hint" style="margin: 0;">{{ t('recConfirmHint') }}</p>
+    </section>
 
     <template v-for="key in layout.shown" :key="key">
       <section v-if="key === 'guide' && (showGuide)" class="bf-card stack" aria-labelledby="guide-h">

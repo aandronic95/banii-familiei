@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById, completeTask, activeTrip } from '../store.js'
+import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById, completeTask, activeTrip, advanceRecurring } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { parseAmount, todayISO, money, isExpression, dateShort } from '../lib/format.js'
 import { confirmDialog, haptic, qrSupported, scanQr, openLink } from '../lib/telegram.js'
@@ -45,6 +45,13 @@ const f = reactive({
   items: Array.isArray(orig?.items) ? orig.items.map((x) => ({ ...x })) : [],
   for_member_id: orig?.for_member_id ?? '',
 })
+
+// Din „Altă sumă” la o plată regulată: totul completat, se schimbă doar suma
+const fromRec = !orig && route.query.rec ? S.recurring.find((r) => r.id === route.query.rec) : null
+if (fromRec) {
+  Object.assign(f, { kind: fromRec.kind, amount: String(fromRec.amount).replace('.', ','), category_id: fromRec.category_id || '', merchant: fromRec.name, member_id: fromRec.member_id || f.member_id })
+  if (accountById(fromRec.account_id)) f.account_id = fromRec.account_id
+}
 
 // Pentru cine: implicit din categorie, până când omul alege singur
 let forTouched = !!orig?.for_member_id
@@ -266,6 +273,11 @@ async function submit() {
       fiscal_ref: f.kind === 'transfer' ? null : f.fiscal_ref,
       items: f.kind === 'transfer' || !f.items.length ? null : f.items,
       for_member_id: f.kind === 'expense' && !isInvestMove ? f.for_member_id || null : null,
+    }
+    if (fromRec) {
+      // trece plata regulată la data următoare; dacă a confirmat-o deja altcineva, nu dublăm
+      if (fromRec.next_date && !(await advanceRecurring(fromRec))) { err.value = t('recAlready'); return }
+      row.recurring_id = fromRec.id
     }
     if (parts.value.length) {
       if (parts.value.some((p) => !(parseAmount(p.amount) > 0) || !p.category_id)) { err.value = t('splitPartBad'); return }

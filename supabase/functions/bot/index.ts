@@ -3,6 +3,7 @@
 import { bigSpendAlert } from "../_shared/alert.ts";
 import { tripTag, withTag } from "../_shared/trip.ts";
 import { normalizeSpoken, transcribe, voiceConfig } from "../_shared/voice.ts";
+import { advance, confirmRec, RT } from "../_shared/recurring.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { accountChoices, accountKeyboard, convertAmount, parseQuick, pickAccount } from "../_shared/quick.ts";
@@ -115,6 +116,31 @@ Deno.serve(async (req) => {
     const member = await memberByTelegram(cb.from.id);
     const ru = member?.lang === "ru";
     const [action, id] = String(cb.data).split(":");
+    // ── Plată regulată cu confirmare: rok (da) / rno (încă nu) / rsk (sari) ──
+    if (member && ["rok", "rno", "rsk"].includes(action) && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
+      const from = String(cb.data).split(":")[2] ?? "";
+      const lg = ru ? "ru" : "ro";
+      const { data: r } = await db.from("recurring").select("*").eq("id", id).eq("family_id", member.family_id).maybeSingle();
+      const edit = (text: string) => cb.message ? tg(BOT_TOKEN, "editMessageText", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text }) : null;
+      if (!r || r.next_date !== from) {
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: RT[lg].done });
+        if (cb.message) await tg(BOT_TOKEN, "editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } });
+      } else if (action === "rno") {
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: RT[lg].asked });
+        await edit((cb.message?.text ?? "") + "\n⏳ " + RT[lg].asked);
+      } else if (action === "rsk") {
+        await advance(db, r, from);
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: "⏭" });
+        await edit(RT[lg].skipped(r.name));
+      } else {
+        const { data: accs } = await db.from("accounts").select("id, currency, type, archived").eq("family_id", member.family_id);
+        const acc = (accs ?? []).find((a) => a.id === r.account_id && !a.archived) ?? (accs ?? []).find((a) => !a.archived && a.type === "card") ?? (accs ?? []).find((a) => !a.archived && a.type !== "asset");
+        const res = acc ? await confirmRec(db, r, from, acc.id, todayLocal(), member.id) : { ok: false };
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: res.ok ? "✅" : RT[lg].done });
+        if (res.ok) await edit(RT[lg].added(r.name, r.kind === "income" ? "+" : "−", fmt(Number(r.amount)), acc!.currency));
+      }
+      return ok();
+    }
     if (member && action === "del" && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
       const { data: gone } = await db.from("transactions").delete().eq("id", id).eq("family_id", member.family_id).select("id");
       await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: gone?.length ? (ru ? "Удалено" : "Anulat") : (ru ? "Уже удалено" : "Deja șters") });
