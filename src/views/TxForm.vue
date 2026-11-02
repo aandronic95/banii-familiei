@@ -24,14 +24,14 @@ const carCat = S.categories.find((c) => c.kind === 'expense' && c.icon === 'car'
 
 const f = reactive({
   kind: orig?.kind ?? route.query.kind ?? 'expense',
-  amount: orig ? String(orig.amount).replace('.', ',') : '',
+  amount: orig ? String(orig.amount).replace('.', ',') : route.query.amount ? String(route.query.amount).replace('.', ',') : '',
   category_id: orig?.category_id ?? route.query.category ?? (route.query.car ? carCat?.id : '') ?? '',
   member_id: orig?.member_id ?? me.value?.id ?? '',
   account_id: orig?.account_id ?? defaultAcc,
   to_account_id: orig?.to_account_id ?? '',
   to_amount: orig?.to_amount ? String(orig.to_amount).replace('.', ',') : '',
   date: orig?.date ?? todayISO(),
-  merchant: orig?.merchant ?? '',
+  merchant: orig?.merchant ?? String(route.query.merchantText || '').slice(0, 60),
   note: orig?.note ?? '',
   receipt_path: orig?.receipt_path ?? null,
   car_id: orig?.car_id ?? (route.query.car || S.cars[0]?.id || null),

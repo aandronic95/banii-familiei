@@ -2,6 +2,7 @@
 import { reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, save } from '../store.js'
+import { bucketOf } from '../lib/home.js'
 import { t } from '../lib/i18n.js'
 import { parseAmount } from '../lib/format.js'
 import { haptic } from '../lib/telegram.js'
@@ -15,6 +16,7 @@ const icons = ['cart', 'car', 'school', 'home', 'bolt', 'heart', 'shirt', 'ticke
 const f = reactive({
   kind: orig?.kind ?? 'expense', name_ro: orig?.name_ro ?? '', name_ru: orig?.name_ru ?? '', icon: orig?.icon ?? 'tag',
   budget: orig?.budget ? String(orig.budget).replace('.', ',') : '',
+  bucket: orig?.bucket ?? '',
 })
 const err = ref('')
 async function submit() {
@@ -24,6 +26,7 @@ async function submit() {
       ...(orig ? { id: orig.id } : { sort: S.categories.length + 1 }), kind: f.kind,
       name_ro: f.name_ro.trim(), name_ru: f.name_ru.trim() || f.name_ro.trim(), icon: f.icon,
       budget: f.kind === 'expense' && parseAmount(f.budget) > 0 ? parseAmount(f.budget) : null,
+      bucket: f.kind === 'expense' && f.bucket ? f.bucket : null,
     })
     haptic('success'); router.back()
   } catch (e) { console.error(e); err.value = t('error', e) }
@@ -43,6 +46,14 @@ async function archive() {
     <div class="fld"><label for="c-ro">{{ t('nameRo') }}</label><input id="c-ro" v-model="f.name_ro" class="inp" maxlength="30"></div>
     <div class="fld"><label for="c-ru">{{ t('nameRu') }}</label><input id="c-ru" v-model="f.name_ru" class="inp" maxlength="30"></div>
     <div v-if="f.kind === 'expense'" class="fld"><label for="c-b">{{ t('budget') }}, MDL</label><input id="c-b" v-model="f.budget" class="inp" inputmode="decimal" :placeholder="t('noBudget')"></div>
+    <div v-if="f.kind === 'expense'" class="fld">
+      <span class="lbl">{{ t('r53Bucket') }}</span>
+      <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+        <button type="button" :class="{ on: !f.bucket }" @click="f.bucket = ''">{{ t('r53Auto', t('r53_' + bucketOf({ icon: f.icon }))) }}</button>
+        <button type="button" :class="{ on: f.bucket === 'needs' }" @click="f.bucket = 'needs'">{{ t('r53_needs') }}</button>
+        <button type="button" :class="{ on: f.bucket === 'wants' }" @click="f.bucket = 'wants'">{{ t('r53_wants') }}</button>
+      </div>
+    </div>
     <div class="fld">
       <span class="lbl">{{ t('icon') }}</span>
       <div class="bf-chips">

@@ -115,7 +115,7 @@ const groups = computed(() => {
         <div class="fld"><label for="f-to">{{ t('to') }}</label><input id="f-to" v-model="F.to" type="date" class="inp"></div>
       </div>
       <div class="bf-chips">
-        <button type="button" class="bf-chip" @click="preset('month')">{{ t('thisMonth') }}</button>
+        <button type="button" class="bf-chip" @click="preset('month')">{{ t('curMonth') }}</button>
         <button type="button" class="bf-chip" @click="preset('prev')">{{ t('prevMonth') }}</button>
         <button type="button" class="bf-chip" @click="preset('year')">{{ t('year') }}</button>
       </div>

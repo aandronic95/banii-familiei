@@ -438,3 +438,50 @@ test('bot: alegerea contului după mesaj', async () => {
   assert.equal(kb.inline_keyboard[1][0].text, '💳 Revolut · EUR')
   assert.ok(kb.inline_keyboard.flat().every((b) => !b.callback_data || b.callback_data.length <= 64)) // limita Telegram
 })
+
+test('dobânda cu plată periodică (cupon): eVMS la 6 luni, licitații anual', async () => {
+  const { couponDates, couponInfo, accruedInterest } = await import('../src/lib/invest.js')
+  assert.deepEqual(couponDates('2026-04-06', '2028-04-06', 'semiannual'), ['2026-10-06', '2027-04-06', '2027-10-06', '2028-04-06'])
+  assert.deepEqual(couponDates('2026-01-31', '2026-05-15', 'monthly'), ['2026-02-28', '2026-03-31', '2026-04-30', '2026-05-15'])
+  assert.deepEqual(couponDates('2026-10-06', '2027-10-06', 'annual'), ['2027-10-06'])
+  const c = couponInfo(2000, 7.45, '2026-04-06', '2028-04-06', 'semiannual', '2026-11-02')
+  assert.equal(c.last, '2026-10-06'); assert.equal(c.next, '2027-04-06'); assert.equal(c.paid, 1); assert.equal(c.count, 4)
+  assert.equal(c.nextAmount, accruedInterest(2000, 7.45, '2026-10-06', '2027-04-06'))
+  assert.equal(c.paidTotal, accruedInterest(2000, 7.45, '2026-04-06', '2026-10-06'))
+  assert.equal(couponInfo(2000, 7.45, '2026-04-06', '2028-04-06', 'maturity', '2026-11-02'), null)
+})
+
+const investTs = await import('../supabase/functions/_shared/invest.ts').catch(() => null)
+test('cupoanele: aceeași logică în aplicație și pe server', { skip: !investTs }, async () => {
+  const js = await import('../src/lib/invest.js')
+  assert.deepEqual(investTs.couponDates('2026-04-06', '2028-04-06', 'semiannual'), js.couponDates('2026-04-06', '2028-04-06', 'semiannual'))
+  assert.deepEqual(investTs.couponInfo(2000, 7.45, '2026-04-06', '2028-04-06', 'annual', '2027-05-01'), js.couponInfo(2000, 7.45, '2026-04-06', '2028-04-06', 'annual', '2027-05-01'))
+})
+
+test('casă și familie: zile de naștere, contoare, 50/30/20', async () => {
+  const h = await import('../src/lib/home.js')
+  assert.equal(h.nextEventDate('1990-11-05', '2026-11-02'), '2026-11-05')
+  assert.equal(h.nextEventDate('1990-03-10', '2026-11-02'), '2027-03-10')
+  assert.equal(h.nextEventDate('2000-02-29', '2027-01-01'), '2027-02-28')
+  assert.equal(h.nextEventDate('2026-12-01', '2026-11-02', false), '2026-12-01')
+  assert.equal(h.nextEventDate('2026-10-01', '2026-11-02', false), null)
+  assert.equal(h.turning('1990-11-05', '2026-11-05', true), 36)
+  assert.equal(h.turning('1990-11-05', '2026-11-05', false), null)
+  const u = h.meterUsage([
+    { date: '2026-08-01', value: 1000 }, { date: '2026-09-01', value: 1180 }, { date: '2026-10-01', value: 1390 },
+    { date: '2026-10-15', value: 20 }, { date: '2026-11-01', value: 140 }, // contor schimbat la 15 oct
+  ])
+  assert.deepEqual(u.months, { '2026-09': 180, '2026-10': 210, '2026-11': 120 })
+  assert.equal(u.last.value, 140)
+  assert.equal(Math.round(u.perDay * 100) / 100, 7.06)
+  const food = { id: 'f', icon: 'cart' }, fun = { id: 'x', icon: 'ticket' }, clothes = { id: 'c', icon: 'shirt', bucket: 'needs' }
+  const r = h.rule503020([{ amount: 6000, category: food }, { amount: 4000, category: fun }, { amount: 1000, category: clothes }], 20000)
+  assert.deepEqual([r.needs, r.wants, r.savings, r.pNeeds, r.pWants, r.pSavings], [7000, 4000, 9000, 35, 20, 45])
+  assert.equal(r.topWants[0].category.id, 'x')
+})
+
+const homeTs = await import('../supabase/functions/_shared/home.ts').catch(() => null)
+test('evenimente: aceeași logică în aplicație și pe server', { skip: !homeTs }, async () => {
+  const js = await import('../src/lib/home.js')
+  for (const [d, t] of [['1990-11-05', '2026-11-02'], ['2000-02-29', '2027-01-01'], ['1985-01-10', '2026-12-31']]) assert.equal(homeTs.nextEventDate(d, t), js.nextEventDate(d, t))
+})

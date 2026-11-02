@@ -4,6 +4,8 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { loanForRecurring, nextOccurrence, nextUnpaid } from "../_shared/loan.ts";
 import { ratesFor } from "../_shared/bnm.ts";
+import { accruedInterest, couponDates } from "../_shared/invest.ts";
+import { nextEventDate, turning } from "../_shared/home.ts";
 import { nowLocalHM, taskButtons, taskLine, T as TT } from "../_shared/tasks.ts";
 
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? "";
@@ -37,6 +39,10 @@ const T = {
     b100: (cat: string, over: string) => `⛔ Bugetul „${cat}” e depășit cu ${over} MDL.`,
     weekly: (inc: string, exp: string, top: string, bal: string) =>
       `📊 Săptămâna aceasta\nVenituri: +${inc} MDL\nCheltuieli: −${exp} MDL\n${top ? `Cele mai mari: ${top}\n` : ""}Sold total: ${bal} MDL`,
+    ev: (title: string, d: number, turns: number | null, gift: string | null) =>
+      `${d === 0 ? "🎉 Azi" : `🎂 Peste ${d} ${d === 1 ? "zi" : "zile"}`}: ${title}${turns ? ` împlinește ${turns} ani` : ""}.${gift ? ` Buget de cadou: ${gift} MDL.` : ""}`,
+    meters: (names: string) => `🔢 E ziua indicilor la contoare: ${names}. Scrie-i în aplicație ca să vezi consumul și costul.`,
+    coupon: (n: string, a: string, c: string) => `💰 Azi se plătește dobânda pentru „${n}”: ~${a} ${c}. Când ajunge pe card, apasă „Deschide” → investiția → „Încasează dobândă / cupon”.`,
     mHead: (m: string) => `🗓 Concluzia lunii ${m}`, mInc: "Venituri", mExp: "Cheltuieli", mSaved: "Economisit", mRate: (p: number) => `${p}% din venituri`,
     mAvg: "Pe zi", mTop: "Unde s-au dus banii:", mUp: (c: string, p: number) => `📈 Cel mai mult a crescut: ${c} (+${p}%)`, mDown: (c: string, p: number) => `📉 Ați redus: ${c} (−${p}%)`,
     mVs: "față de luna trecută", mNone: "Nicio tranzacție luna trecută.",
@@ -59,6 +65,10 @@ const T = {
     b100: (cat: string, over: string) => `⛔ Бюджет «${cat}» превышен на ${over} MDL.`,
     weekly: (inc: string, exp: string, top: string, bal: string) =>
       `📊 За неделю\nДоходы: +${inc} MDL\nРасходы: −${exp} MDL\n${top ? `Больше всего: ${top}\n` : ""}Общий баланс: ${bal} MDL`,
+    ev: (title: string, d: number, turns: number | null, gift: string | null) =>
+      `${d === 0 ? "🎉 Сегодня" : `🎂 Через ${d} дн.`}: ${title}${turns ? ` — исполняется ${turns}` : ""}.${gift ? ` Бюджет на подарок: ${gift} MDL.` : ""}`,
+    meters: (names: string) => `🔢 День передачи показаний: ${names}. Внесите их в приложении, чтобы увидеть расход и стоимость.`,
+    coupon: (n: string, a: string, c: string) => `💰 Сегодня выплата процентов по «${n}»: ~${a} ${c}. Когда придут на карту, откройте инвестицию → «Получить проценты / купон».`,
     mHead: (m: string) => `🗓 Итоги месяца: ${m}`, mInc: "Доходы", mExp: "Расходы", mSaved: "Сэкономлено", mRate: (p: number) => `${p}% от доходов`,
     mAvg: "В день", mTop: "Куда ушли деньги:", mUp: (c: string, p: number) => `📈 Больше всего выросло: ${c} (+${p}%)`, mDown: (c: string, p: number) => `📉 Сократили: ${c} (−${p}%)`,
     mVs: "к прошлому месяцу", mNone: "За прошлый месяц операций нет.",
@@ -172,9 +182,39 @@ async function daily(today: string) {
     }
 
     // Investiții: scadențe
-    const { data: invs } = await db.from("investments").select("id, name, code, amount, currency, maturity_date")
-      .eq("family_id", f.id).neq("status", "closed").not("maturity_date", "is", null);
+    const { data: invs } = await db.from("investments").select("id, name, code, kind, amount, currency, rate, start_date, maturity_date, coupon_freq")
+      .eq("family_id", f.id).neq("status", "closed");
+    // Zile de naștere și evenimente: cu X zile înainte (cum s-a ales) și în ziua lor
+    const { data: famEvents } = await db.from("events").select("id, title, date, has_year, yearly, gift_budget, remind_days").eq("family_id", f.id);
+    for (const e of famEvents ?? []) {
+      const nx = nextEventDate(e.date, today, e.yearly);
+      if (!nx) continue;
+      const d = daysBetween(today, nx);
+      if (!(d === 0 || d === e.remind_days) || !(await once(`ev:${e.id}:${nx}:${d}`))) continue;
+      const turns = turning(e.date, nx, e.has_year);
+      await send(members, "events", (lg) => T[lg].ev(e.title, d, turns, e.gift_budget ? fmt(Number(e.gift_budget)) : null));
+    }
+    // Contoare: în ziua aleasă pentru indici, dacă luna asta n-au fost trecuți
+    const day = Number(today.slice(8, 10));
+    const { data: mtrs } = await db.from("meters").select("id, name, reminder_day").eq("family_id", f.id).eq("archived", false).eq("reminder_day", day);
+    if (mtrs?.length) {
+      const { data: done } = await db.from("meter_readings").select("meter_id").eq("family_id", f.id).gte("date", today.slice(0, 8) + "01");
+      const todo = mtrs.filter((m) => !(done ?? []).some((r) => r.meter_id === m.id));
+      if (todo.length && (await once(`meters:${f.id}:${today}`))) await send(members, "meters", (lg) => T[lg].meters(todo.map((m) => m.name).join(", ")));
+    }
+
+    // Cupoane: în ziua plății dobânzii (înainte de scadență)
     for (const i of invs ?? []) {
+      if (!i.rate || !i.coupon_freq || i.coupon_freq === "maturity" || !["gov_bond", "tbill", "other"].includes(i.kind)) continue;
+      const dates: string[] = couponDates(i.start_date, i.maturity_date, i.coupon_freq, today);
+      const k = dates.indexOf(today);
+      if (k < 0 || today === i.maturity_date || !(await once(`coupon:${i.id}:${today}`))) continue;
+      const amt = accruedInterest(Number(i.amount), Number(i.rate), k ? dates[k - 1] : i.start_date, today);
+      const label = i.code ? `${i.name} ${i.code}` : i.name;
+      await send(members, "invest", (lg) => T[lg].coupon(label, fmt(amt), i.currency));
+    }
+    for (const i of invs ?? []) {
+      if (!i.maturity_date) continue;
       const d = daysBetween(today, i.maturity_date);
       if ((d === 7 || d === 0) && (await once(`inv:${i.id}:${d}`))) {
         const label = i.code ? `${i.name} ${i.code}` : i.name;

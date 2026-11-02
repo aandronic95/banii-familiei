@@ -10,6 +10,7 @@ import NetWorth from '../components/NetWorth.vue'
 import Subscriptions from '../components/Subscriptions.vue'
 import Projects from '../components/Projects.vue'
 import DataCheck from '../components/DataCheck.vue'
+import Rule503020 from '../components/Rule503020.vue'
 
 const router = useRouter()
 const period = ref('month')
@@ -75,6 +76,8 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
       <div class="kv"><span class="muted">{{ t('savedIn') }}</span><b :class="sums.inc - sums.exp >= 0 ? 'bf-income' : 'bf-expense'">{{ sums.inc - sums.exp >= 0 ? '+' : '' }}{{ money0(sums.inc - sums.exp) }} MDL</b></div>
       <p class="hint" style="margin: 0;">{{ t('ieHint', rangeLabel) }}</p>
     </div>
+
+    <Rule503020 />
 
     <DailySpend />
 

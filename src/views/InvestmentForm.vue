@@ -1,9 +1,10 @@
 <script setup>
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, me, save, remove, activeAccounts, balances, investStatus } from '../store.js'
 import { t } from '../lib/i18n.js'
-import { parseAmount, todayISO, money } from '../lib/format.js'
+import { parseAmount, todayISO, money, dateLong } from '../lib/format.js'
+import { accruedInterest } from '../lib/invest.js'
 import { confirmDialog, haptic } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
@@ -27,12 +28,18 @@ const f = reactive({
   rate: num(orig?.rate),
   start_date: orig?.start_date ?? todayISO(),
   maturity_date: orig?.maturity_date ?? '',
+  coupon_freq: orig?.coupon_freq ?? 'semiannual',
   current_value: num(orig?.current_value),
   status: orig?.status ?? 'active',
   member_id: orig?.member_id ?? me.value?.id ?? '',
   account_id: orig?.account_id ?? '',
   note: orig?.note ?? '',
 })
+// Plata dobânzii se alege doar pentru obligațiuni / bonuri / alte depozite cu dobândă
+const hasCoupon = computed(() => ['gov_bond', 'tbill', 'other'].includes(f.kind))
+// Implicit: obligațiuni de stat (eVMS) la 6 luni, bonuri de trezorerie la scadență
+watch(() => f.kind, (k) => { if (isNew) f.coupon_freq = k === 'gov_bond' ? 'semiannual' : 'maturity' })
+if (isNew && f.kind !== 'gov_bond') f.coupon_freq = 'maturity'
 const pay = ref('')          // contul din care se plătește (doar la creare)
 const busy = ref(false)
 const err = ref('')
@@ -52,7 +59,7 @@ if (isNew && !f.name) f.name = t('invKind_' + f.kind)
 const preview = computed(() => {
   const amount = parseAmount(f.amount)
   if (!(amount > 0)) return null
-  return investStatus({ id: orig?.id || '_', kind: f.kind, amount, rate: parseAmount(f.rate) || null, start_date: f.start_date || todayISO(), maturity_date: f.maturity_date || null, current_value: f.current_value === '' ? null : parseAmount(f.current_value), status: f.status, currency: f.currency })
+  return investStatus({ id: orig?.id || '_', kind: f.kind, amount, rate: parseAmount(f.rate) || null, start_date: f.start_date || todayISO(), maturity_date: f.maturity_date || null, current_value: f.current_value === '' ? null : parseAmount(f.current_value), status: f.status, currency: f.currency, coupon_freq: hasCoupon.value ? f.coupon_freq : 'maturity' })
 })
 const accLabel = (a) => `${a.name} · ${money(balances.value[a.id])} ${a.currency}`
 const payAccounts = computed(() => activeAccounts.value.filter((a) => a.currency === f.currency))
@@ -68,6 +75,7 @@ async function submit() {
       kind: f.kind, platform: f.platform.trim() || null, name: f.name.trim(), code: f.code.trim() || null, currency: f.currency,
       amount, units: parseAmount(f.units) || null, rate: f.rate === '' ? null : parseAmount(f.rate),
       start_date: f.start_date || todayISO(), maturity_date: f.maturity_date || null,
+      coupon_freq: hasCoupon.value ? f.coupon_freq : 'maturity',
       current_value: f.current_value === '' ? null : parseAmount(f.current_value), value_date: f.current_value === '' ? null : todayISO(),
       status: f.status, member_id: f.member_id || null, account_id: f.account_id || pay.value || null, note: f.note.trim() || null,
     })
@@ -82,7 +90,11 @@ async function submit() {
 }
 
 function collect() {
-  router.push({ path: '/tx/new', query: { kind: 'income', investment: orig.id, category: S.categories.find((c) => c.kind === 'income' && c.icon === 'percent')?.id || '', account: orig.account_id || '' } })
+  // suma ultimului cupon plătit (eVMS / licitații), ca să nu o mai scrii de mână
+  const c = investStatus(orig).coupon
+  const last = c?.paid ? c.dates[c.paid - 1] : null
+  const amount = last ? accruedInterest(orig.amount, orig.rate, c.paid > 1 ? c.dates[c.paid - 2] : orig.start_date, last) : ''
+  router.push({ path: '/tx/new', query: { amount: amount ? String(amount) : undefined, kind: 'income', investment: orig.id, category: S.categories.find((c) => c.kind === 'income' && c.icon === 'percent')?.id || '', account: orig.account_id || '' } })
 }
 
 async function doClose() {
@@ -144,6 +156,14 @@ async function del() {
       <div v-if="f.kind !== 'stocks'" class="fld"><label for="i-m">{{ t('maturityDate') }}</label><input id="i-m" v-model="f.maturity_date" type="date" class="inp"></div>
     </div>
 
+    <div v-if="hasCoupon" class="fld">
+      <label for="i-cf">{{ t('couponFreq') }}</label>
+      <select id="i-cf" v-model="f.coupon_freq" class="inp">
+        <option v-for="k in ['maturity', 'monthly', 'quarterly', 'semiannual', 'annual']" :key="k" :value="k">{{ t('cf_' + k) }}</option>
+      </select>
+      <span class="hint">{{ t('couponFreqHint') }}</span>
+    </div>
+
     <div class="fld">
       <label for="i-v">{{ t('currentValue') }}, {{ f.currency }}</label>
       <input id="i-v" v-model="f.current_value" class="inp" inputmode="decimal" :placeholder="t('optional')">
@@ -154,6 +174,10 @@ async function del() {
       <div class="kv"><span class="muted">{{ t('invValue') }}</span><b>{{ money(preview.value) }} {{ f.currency }}</b></div>
       <div v-if="preview.accrued" class="kv"><span class="muted">{{ t('invProfit') }} ({{ t('accruedSoFar') }})</span><b class="bf-income">+{{ money(preview.accrued) }}</b></div>
       <div v-if="preview.expectedAtMaturity" class="kv"><span class="muted">{{ t('expectedAtMaturity') }}</span><b>+{{ money(preview.expectedAtMaturity) }}</b></div>
+      <template v-if="preview.coupon">
+        <div v-if="preview.coupon.next" class="kv"><span class="muted">{{ t('couponNext', dateLong(preview.coupon.next)) }}</span><b class="bf-income">+{{ money(preview.coupon.nextAmount) }}</b></div>
+        <div v-if="preview.coupon.paid" class="kv"><span class="muted">{{ t('couponPaid', preview.coupon.paid, preview.coupon.count) }}</span><b>+{{ money(preview.coupon.paidTotal) }}</b></div>
+      </template>
       <div v-if="!isNew && investStatus(orig).received" class="kv"><span class="muted">{{ t('invReceived') }}</span><b class="bf-income">+{{ money(investStatus(orig).received) }}</b></div>
     </div>
 

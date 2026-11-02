@@ -29,8 +29,8 @@ async function load(more = false) {
 }
 onMounted(() => load())
 
-const TBL = { transactions: 'list', accounts: 'card', categories: 'chart', loans: 'bank', investments: 'chart', debts: 'users', goals: 'piggy', recurring: 'clock', cars: 'car', car_events: 'car', tasks: 'check' }
-const KEY = { transactions: 'transactions', car_events: 'carEvents', debts: 'debts', goals: 'goals', recurring: 'recurring', investments: 'investments', tasks: 'tasks' }
+const TBL = { transactions: 'list', accounts: 'card', categories: 'chart', loans: 'bank', investments: 'chart', debts: 'users', goals: 'piggy', recurring: 'clock', cars: 'car', car_events: 'car', tasks: 'check', meters: 'gauge', meter_readings: 'gauge', wishes: 'star', events: 'cake' }
+const KEY = { transactions: 'transactions', car_events: 'carEvents', debts: 'debts', goals: 'goals', recurring: 'recurring', investments: 'investments', tasks: 'tasks', meter_readings: 'readings', wishes: 'wishes', events: 'events' }
 
 function curOf(r) { return accountById(r.account_id)?.currency || r.currency || 'MDL' }
 function label(tbl, r) {

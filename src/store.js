@@ -6,10 +6,11 @@ import { todayISO, uuid } from './lib/format.js'
 import { cacheGet, cacheSet, cacheDel } from './lib/cache.js'
 import { toast } from './components/Toast.js'
 import { t as tr } from './lib/i18n.js'
-import { accruedInterest, liveAccrued, perDay, assetValue } from './lib/invest.js'
+import { accruedInterest, liveAccrued, perDay, assetValue, couponInfo } from './lib/invest.js'
 import { detectSubscriptions, suggestBudget } from './lib/insights.js'
 import { schedule } from './lib/loan.js'
 import { nextDue, parseShopping } from './lib/taskparse.js'
+import { nextEventDate, turning, daysBetween as daysBetweenISO } from './lib/home.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -33,6 +34,10 @@ export const S = reactive({
   tasks: [],
   taskComments: [],
   shopping: [],
+  meters: [],
+  readings: [],
+  wishes: [],
+  events: [],
   rates: { MDL: 1 },
   rateDates: {},
   offline: false,   // lucrăm din copia locală, fără server
@@ -44,10 +49,11 @@ const TABLES = {
   accounts: 'accounts', categories: 'categories', transactions: 'transactions', loans: 'loans',
   loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments', recurring: 'recurring', debts: 'debts', goals: 'goals', templates: 'templates',
   tasks: 'tasks', task_comments: 'taskComments', shopping_items: 'shopping',
+  meters: 'meters', meter_readings: 'readings', wishes: 'wishes', events: 'events',
 }
 
 // ───────────── Copia locală și coada offline ─────────────
-const DATA_KEYS = ['family', 'members', 'accounts', 'categories', 'transactions', 'loans', 'loanPayments', 'cars', 'carEvents', 'investments', 'recurring', 'debts', 'goals', 'templates', 'tasks', 'taskComments', 'shopping']
+const DATA_KEYS = ['family', 'members', 'accounts', 'categories', 'transactions', 'loans', 'loanPayments', 'cars', 'carEvents', 'investments', 'recurring', 'debts', 'goals', 'templates', 'tasks', 'taskComments', 'shopping', 'meters', 'readings', 'wishes', 'events']
 const snapKey = () => 'snap:' + S.tgId
 const queueKey = () => 'queue:' + S.tgId
 let queue = []
@@ -213,7 +219,7 @@ async function fetchAll(table, order = 'id') {
 }
 
 export async function loadAll() {
-  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping, rates] = await Promise.all([
+  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping, meters, readings, wishes, events, rates] = await Promise.all([
     supabase.from('families').select('*').limit(1).single(),
     fetchAll('members', 'created_at'),
     fetchAll('accounts', 'sort'),
@@ -231,11 +237,15 @@ export async function loadAll() {
     fetchAll('tasks', 'created_at').catch(() => []),
     fetchAll('task_comments', 'created_at').catch(() => []),
     fetchAll('shopping_items', 'created_at').catch(() => []),
+    fetchAll('meters', 'sort').catch(() => []),
+    fetchAll('meter_readings', 'date').catch(() => []),
+    fetchAll('wishes', 'created_at').catch(() => []),
+    fetchAll('events', 'date').catch(() => []),
     supabase.from('rates').select('*').order('date', { ascending: false }).limit(20),
   ])
   if (fam.error) throw fam.error
   lastLoad = Date.now()
-  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping })
+  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping, meters, readings, wishes, events })
   for (const r of rates.data || []) {
     if (!S.rateDates[r.currency]) { S.rates[r.currency] = Number(r.rate); S.rateDates[r.currency] = r.date }
   }
@@ -315,7 +325,7 @@ function maybeAlert(rows) {
 }
 
 // Ce se poate „Anula” după ștergere (fără rânduri copil care s-ar pierde în cascadă)
-const UNDOABLE = ['transactions', 'car_events', 'debts', 'goals', 'recurring', 'investments', 'tasks', 'shopping_items']
+const UNDOABLE = ['transactions', 'car_events', 'debts', 'goals', 'recurring', 'investments', 'tasks', 'shopping_items', 'meter_readings', 'wishes', 'events']
 
 export async function remove(table, id, { onFinal, silent = false } = {}) {
   const key = TABLES[table]
@@ -458,7 +468,9 @@ export function investStatus(inv, today = todayISO()) {
   const amount = Number(inv.amount) || 0
   const end = inv.maturity_date && inv.maturity_date < today ? inv.maturity_date : today
   const days = Math.max(0, Math.round((Date.parse(end) - Date.parse(inv.start_date)) / DAY))
-  const accrued = ACCRUING.includes(inv.kind) ? accruedInterest(amount, inv.rate, inv.start_date, end) : 0
+  // cu plată periodică, dobânda se adună doar de la ultimul cupon (cele dinainte au fost deja plătite)
+  const coupon = ACCRUING.includes(inv.kind) ? couponInfo(amount, inv.rate, inv.start_date, inv.maturity_date, inv.coupon_freq, today) : null
+  const accrued = ACCRUING.includes(inv.kind) ? accruedInterest(amount, inv.rate, coupon ? coupon.last : inv.start_date, end) : 0
   const received = S.transactions
     .filter((x) => x.investment_id === inv.id && x.kind === 'income')
     .reduce((s, x) => s + Number(x.amount) * (accountById(x.account_id)?.currency === inv.currency ? 1 : (S.rates[accountById(x.account_id)?.currency] ?? 1) / (S.rates[inv.currency] ?? 1)), 0)
@@ -469,7 +481,7 @@ export function investStatus(inv, today = todayISO()) {
   const total = inv.rate && inv.maturity_date && ACCRUING.includes(inv.kind)
     ? accruedInterest(amount, inv.rate, inv.start_date, inv.maturity_date)
     : null
-  return { accrued, received, returned, value, closed, expectedAtMaturity: total, days }
+  return { accrued, received, returned, value, closed, expectedAtMaturity: total, days, coupon }
 }
 
 export const investStatuses = computed(() => Object.fromEntries(S.investments.map((i) => [i.id, investStatus(i)])))
@@ -487,7 +499,10 @@ const msOf = (iso) => (iso ? Date.parse(iso) : null)
 //   iar după fiecare plată primită (dobândă/rată) numărătoarea o ia de la capăt, ca să nu se adune de două ori.
 export function liveInfo(inv) {
   if (!inv.rate || inv.status === 'closed' || !['gov_bond', 'tbill', 'other', 'p2p'].includes(inv.kind)) return null
-  if (ACCRUING.includes(inv.kind) && inv.current_value == null) return { base: Number(inv.amount), since: msOf(inv.start_date) }
+  if (ACCRUING.includes(inv.kind) && inv.current_value == null) {
+    const c = couponInfo(Number(inv.amount), inv.rate, inv.start_date, inv.maturity_date, inv.coupon_freq, todayISO())
+    return { base: Number(inv.amount), since: msOf(c ? c.last : inv.start_date) }
+  }
   const base = inv.current_value != null ? Number(inv.current_value) : Number(inv.amount)
   let since = msOf(inv.current_value != null && inv.value_date ? inv.value_date : inv.start_date)
   for (const x of S.transactions) if (x.investment_id === inv.id && (x.kind === 'income' || x.kind === 'divest')) since = Math.max(since, msOf(x.date))
@@ -893,6 +908,15 @@ export async function addShopping(text) {
   return items.length
 }
 
+// ───────────── Evenimente (zile de naștere, aniversări) ─────────────
+export const upcomingEvents = computed(() => {
+  const today = todayISO()
+  return S.events.map((e) => {
+    const next = nextEventDate(e.date, today, e.yearly)
+    return next ? { ...e, next, inDays: daysBetweenISO(today, next), turns: turning(e.date, next, e.has_year) } : null
+  }).filter(Boolean).sort((a, b) => a.next.localeCompare(b.next))
+})
+
 export const txCurrency = (t) => accountById(t.account_id)?.currency || 'MDL'
 
 // Sume într-o perioadă (în MDL); transferurile nu intră în venituri/cheltuieli
@@ -955,6 +979,13 @@ export function upcoming(from, to) {
       d = nextOccurrence(d, r.every_months, r.day_of_month)
     }
   }
+  for (const e of S.events) {
+    const today0 = todayISO()
+    const nx = nextEventDate(e.date, from > today0 ? from : today0, e.yearly)
+    if (!nx || nx < from || nx > to) continue
+    const turns = turning(e.date, nx, e.has_year)
+    ev.push({ date: nx, type: 'event', title: e.title + (turns ? ` (${turns})` : ''), amount: e.gift_budget ? Number(e.gift_budget) : null, currency: 'MDL', sign: -1, to: '/event/' + e.id })
+  }
   for (const k of S.tasks) {
     if (k.done || k.kind !== 'money' || !Number(k.amount) || !k.due_date || k.due_date < from || k.due_date > to) continue
     ev.push({ date: k.due_date, type: 'task', title: k.title, amount: Number(k.amount), currency: accountById(k.account_id)?.currency || 'MDL', sign: -1, to: '/task/' + k.id })
@@ -964,6 +995,15 @@ export function upcoming(from, to) {
     ev.push({ date: e.due_date, type: 'car', title: e.title, amount: e.amount ? Number(e.amount) : null, currency: 'MDL', sign: -1, to: '/car' })
   }
   for (const i of S.investments) {
+    // cupoanele de dobândă dinainte de scadență
+    if (i.status !== 'closed' && ACCRUING.includes(i.kind) && i.coupon_freq && i.coupon_freq !== 'maturity' && i.rate) {
+      const ci = couponInfo(Number(i.amount), i.rate, i.start_date, i.maturity_date, i.coupon_freq, todayISO())
+      let prev = i.start_date
+      for (const d of ci?.dates || []) {
+        if (d !== i.maturity_date && d >= from && d <= to) ev.push({ date: d, type: 'inv', title: i.name + (i.code ? ' ' + i.code : '') + ' · ' + tr('couponWord'), amount: accruedInterest(i.amount, i.rate, prev, d), currency: i.currency, sign: 1, to: '/investment/' + i.id })
+        prev = d
+      }
+    }
     if (i.status === 'closed' || !i.maturity_date || i.maturity_date < from || i.maturity_date > to) continue
     ev.push({ date: i.maturity_date, type: 'inv', title: i.name + (i.code ? ' ' + i.code : ''), amount: Number(i.amount), currency: i.currency, sign: 1, to: '/investment/' + i.id })
   }
