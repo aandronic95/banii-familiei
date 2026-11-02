@@ -485,3 +485,61 @@ test('evenimente: aceeași logică în aplicație și pe server', { skip: !homeT
   const js = await import('../src/lib/home.js')
   for (const [d, t] of [['1990-11-05', '2026-11-02'], ['2000-02-29', '2027-01-01'], ['1985-01-10', '2026-12-31']]) assert.equal(homeTs.nextEventDate(d, t), js.nextEventDate(d, t))
 })
+
+test('călătorie: total, pe zi, pe persoană, plan și restul pe zi', async () => {
+  const { tripStats, tripOn } = await import('../src/lib/trip.js')
+  const trip = { start_date: '2027-07-01', end_date: '2027-07-10', budget: 2000, people: 3, plan: [{ category_id: 'hotel', amount: 1200 }, { category_id: 'food', amount: 600 }] }
+  const rate = { MDL: 1, EUR: 20 }
+  const conv = (a, c) => (a * rate[c]) / rate.EUR
+  const txs = [
+    { kind: 'expense', amount: 1100, currency: 'EUR', category_id: 'hotel' },
+    { kind: 'expense', amount: 2000, currency: 'MDL', category_id: 'food' }, // 100 EUR
+    { kind: 'expense', amount: 50, currency: 'EUR', category_id: 'fun' },
+    { kind: 'income', amount: 50, currency: 'EUR' }, // bani întorși
+  ]
+  const s = tripStats(trip, txs, conv, '2027-07-05')
+  assert.equal(s.status, 'during'); assert.equal(s.days, 10); assert.equal(s.elapsed, 5)
+  assert.equal(s.net, 1200); assert.equal(s.perDay, 240); assert.equal(s.perPerson, 400)
+  assert.equal(s.left, 800); assert.equal(Math.round(s.allowPerDay * 100) / 100, Math.round((800 / 6) * 100) / 100)
+  assert.deepEqual(s.rows.map((r) => [r.category_id, r.amount, r.spent]), [['hotel', 1200, 1100], ['food', 600, 100], ['fun', 0, 50]])
+  assert.deepEqual(s.byCur, { EUR: 1150, MDL: 2000 })
+  assert.equal(tripStats(trip, [], conv, '2027-06-01').status, 'before')
+  assert.equal(tripOn([{ ...trip, tag: 'x', auto_tag: true }], '2027-07-10')?.tag, 'x')
+  assert.equal(tripOn([{ ...trip, tag: 'x', auto_tag: false }], '2027-07-03'), null)
+})
+
+test('prețuri din bonuri: grupare, schimbare, cel mai ieftin magazin', async () => {
+  const { priceIndex, productKey } = await import('../src/lib/prices.js')
+  assert.equal(productKey('LAPTE  Lapte Bun 2.5% 1L'), productKey('lapte lapte bun 2.5% 1l'))
+  assert.equal(productKey('Pâine albă'), 'paine alba')
+  const p = priceIndex([
+    { id: 1, date: '2026-09-01', merchant: 'Linella', items: [{ name: 'Lapte 2.5% 1L', qty: 2, price: 20, sum: 40 }, { name: 'Pâine', qty: 1, price: 8, sum: 8 }] },
+    { id: 2, date: '2026-10-01', merchant: 'Nr1', items: [{ name: 'LAPTE 2.5% 1L', qty: 1, price: 0, sum: 22 }] },
+    { id: 3, date: '2026-10-20', merchant: 'Linella', items: [{ name: 'Lapte 2.5% 1l', qty: 1, price: 21, sum: 21 }] },
+  ])
+  const milk = p.find((x) => x.key.startsWith('lapte'))
+  assert.equal(milk.count, 3); assert.equal(milk.last, 21); assert.equal(milk.min, 20); assert.equal(milk.max, 22)
+  assert.equal(Math.round(milk.change * 100), 5)
+  assert.deepEqual(milk.shops.map((s) => s.merchant), ['Linella', 'Nr1'])
+  assert.equal(p[0].key, milk.key)
+})
+
+const weeklyTs = await import('../supabase/functions/_shared/weekly.ts').catch((e) => { console.error(e); return null })
+test('rezumat săptămânal: bare, top 3, comparație', { skip: !weeklyTs }, () => {
+  const { weeklyText, bar } = weeklyTs
+  assert.equal(bar(5, 10, 8), '▇▇▇▇░░░░'); assert.equal(bar(0.1, 10, 8), '▇░░░░░░░'); assert.equal(bar(0, 0, 4), '░░░░')
+  const food = { ro: 'Alimente', ru: 'Продукты' }
+  const txt = weeklyText({
+    from: '2026-10-27', to: '2026-11-02', total: 50000,
+    cur: [{ kind: 'income', date: '2026-10-30', mdl: 10000 }, { kind: 'expense', date: '2026-10-27', mdl: 600, merchant: 'Linella', cat: food },
+      { kind: 'expense', date: '2026-10-29', mdl: 300, cat: food }, { kind: 'expense', date: '2026-11-01', mdl: 1200, merchant: 'Farmacia', cat: null }],
+    prev: [{ kind: 'expense', date: '2026-10-22', mdl: 1500 }], trip: null,
+  }, 'ro')
+  assert.match(txt, /27 oct – 2 nov/)
+  assert.match(txt, /Cheltuieli: −2 100 MDL \(▲ 40% față de săptămâna trecută\)/)
+  assert.match(txt, /Economisit: 7 900 MDL/)
+  assert.match(txt, /Ma ▇▇▇▇░░░░ 600/) // 27 oct 2026 e marți
+  assert.match(txt, /1\. Farmacia — 1 200 MDL \(1 nov\)/)
+  assert.match(txt, /3\. Alimente — 300 MDL/)
+  assert.ok(weeklyText({ from: '2026-10-27', to: '2026-11-02', total: 0, cur: [], prev: [] }, 'ru').includes('расходов нет'))
+})

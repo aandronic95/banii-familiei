@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, periodSums, categoryById, memberById, totalMdl, debtMdl, investMdl, monthRange } from '../store.js'
+import { S, periodSums, categoryById, memberById, totalMdl, debtMdl, investMdl, monthRange, costPerPerson } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money0, todayISO, monthShort, dateShort } from '../lib/format.js'
 import DailySpend from '../components/DailySpend.vue'
@@ -46,6 +46,12 @@ const cats = computed(() => {
 const people = computed(() => {
   const rows = Object.entries(sums.value.byMember).map(([id, v]) => ({ id, v, m: memberById(id) })).sort((a, b) => b.v - a.v)
   return rows.map((r) => ({ ...r, pct: (r.v / (sums.value.exp || 1)) * 100 }))
+})
+// Pentru cine s-au cheltuit banii: direct + partea egală din cele comune
+const perPerson = computed(() => {
+  const c = costPerPerson(sums.value.byFor)
+  const max = Math.max(1, ...c.rows.map((r) => r.total))
+  return { ...c, any: c.rows.some((r) => r.direct > 0), rows: c.rows.map((r) => ({ ...r, wd: (r.direct / max) * 100, ws: (r.share / max) * 100 })) }
 })
 const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc)} / −${money0(m.exp)}`).join('; '))
 </script>
@@ -97,6 +103,22 @@ const aria = computed(() => months.value.map((m) => `${m.label}: +${money0(m.inc
         <div v-for="p in people" :key="p.id" :style="{ width: p.pct + '%', background: p.m ? `var(--person-${p.m.color})` : 'var(--ink-muted)' }"></div>
       </div>
       <div v-for="p in people" :key="p.id" class="kv"><span><span :class="p.m ? `bf-dot bf-p${p.m.color}` : 'bf-dot'" :style="p.m ? '' : 'background: var(--ink-muted)'"></span>{{ p.m?.name || t('common') }}</span><b>{{ money0(p.v) }} MDL</b></div>
+    </div>
+
+    <div v-if="S.members.length > 1 && sums.exp" class="bf-card stack">
+      <div class="sec-head"><h2 class="h-sec">{{ t('perPersonTitle') }}</h2><span class="cap">{{ rangeLabel }}</span></div>
+      <template v-if="perPerson.any">
+        <div v-for="r in perPerson.rows" :key="r.m.id" style="display: grid; gap: 6px;">
+          <div class="kv"><span><span :class="`bf-dot bf-p${r.m.color}`"></span>{{ r.m.name }}</span><b>{{ money0(r.total) }} MDL</b></div>
+          <div style="display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--surface-2, rgba(127,127,127,.12));">
+            <div :style="{ width: r.wd + '%', background: `var(--person-${r.m.color})` }"></div>
+            <div :style="{ width: r.ws + '%', background: `var(--person-${r.m.color})`, opacity: 0.35 }"></div>
+          </div>
+          <span class="cap">{{ r.direct ? t('perPersonLine', money0(r.direct), money0(r.share)) : t('perPersonShare', money0(r.share)) }}</span>
+        </div>
+        <p class="hint" style="margin: 0;">{{ t('perPersonHint', money0(perPerson.common), S.members.length) }}</p>
+      </template>
+      <p v-else class="hint" style="margin: 0;">{{ t('perPersonEmpty') }}</p>
     </div>
 
     <Projects />

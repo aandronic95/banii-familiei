@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById, completeTask } from '../store.js'
+import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById, completeTask, activeTrip } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { parseAmount, todayISO, money, isExpression, dateShort } from '../lib/format.js'
 import { confirmDialog, haptic, qrSupported, scanQr, openLink } from '../lib/telegram.js'
@@ -30,7 +30,7 @@ const f = reactive({
   account_id: orig?.account_id ?? defaultAcc,
   to_account_id: orig?.to_account_id ?? '',
   to_amount: orig?.to_amount ? String(orig.to_amount).replace('.', ',') : '',
-  date: orig?.date ?? todayISO(),
+  date: orig?.date ?? (/^\d{4}-\d{2}-\d{2}$/.test(route.query.date || '') ? route.query.date : todayISO()),
   merchant: orig?.merchant ?? String(route.query.merchantText || '').slice(0, 60),
   note: orig?.note ?? '',
   receipt_path: orig?.receipt_path ?? null,
@@ -43,7 +43,21 @@ const f = reactive({
   tags: orig?.tags ? [...orig.tags] : route.query.tag ? [normTag(route.query.tag)] : [],
   fiscal_ref: orig?.fiscal_ref ?? null,
   items: Array.isArray(orig?.items) ? orig.items.map((x) => ({ ...x })) : [],
+  for_member_id: orig?.for_member_id ?? '',
 })
+
+// Pentru cine: implicit din categorie, până când omul alege singur
+let forTouched = !!orig?.for_member_id
+function pickFor(id) { forTouched = true; f.for_member_id = id }
+watch(() => f.category_id, (id) => { if (!forTouched) f.for_member_id = categoryById(id)?.for_member_id || '' }, { immediate: !orig })
+// În timpul unei călătorii, cheltuielile noi primesc eticheta ei
+let tripTag = null
+watch(() => [f.date, f.kind], () => {
+  if (orig) return
+  const tr = f.kind === 'expense' ? activeTrip(f.date || todayISO()) : null
+  if (tripTag && tripTag !== tr?.tag) { const i = f.tags.indexOf(tripTag); if (i >= 0) f.tags.splice(i, 1); tripTag = null }
+  if (tr && !f.tags.includes(tr.tag) && f.tags.length < 8) { f.tags.push(tr.tag); tripTag = tr.tag }
+}, { immediate: true })
 
 // Codul QR de pe bonul fiscal: suma și data exacte; magazinul îl învățăm din bonurile anterioare de la același aparat
 const qr = ref(null) // { url, dup, learned, needsPage }
@@ -251,6 +265,7 @@ async function submit() {
       tags: f.kind === 'transfer' ? [] : f.tags,
       fiscal_ref: f.kind === 'transfer' ? null : f.fiscal_ref,
       items: f.kind === 'transfer' || !f.items.length ? null : f.items,
+      for_member_id: f.kind === 'expense' && !isInvestMove ? f.for_member_id || null : null,
     }
     if (parts.value.length) {
       if (parts.value.some((p) => !(parseAmount(p.amount) > 0) || !p.category_id)) { err.value = t('splitPartBad'); return }
@@ -372,6 +387,14 @@ async function del() {
       <span class="lbl">{{ t('who') }}</span>
       <div class="bf-chips">
         <button v-for="m in S.members" :key="m.id" type="button" class="bf-chip" :class="{ 'bf-chip--on': f.member_id === m.id }" @click="f.member_id = m.id"><span :class="`bf-dot bf-p${m.color}`"></span>{{ m.name }}</button>
+      </div>
+    </div>
+
+    <div v-if="f.kind === 'expense' && !isInvestMove && S.members.length > 1" class="fld">
+      <span class="lbl">{{ t('forWhom') }}</span>
+      <div class="bf-chips">
+        <button type="button" class="bf-chip" :class="{ 'bf-chip--on': !f.for_member_id }" @click="pickFor('')">{{ t('forAll') }}</button>
+        <button v-for="m in S.members" :key="m.id" type="button" class="bf-chip" :class="{ 'bf-chip--on': f.for_member_id === m.id }" @click="pickFor(m.id)"><span :class="`bf-dot bf-p${m.color}`"></span>{{ m.name }}</button>
       </div>
     </div>
 

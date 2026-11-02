@@ -17,6 +17,7 @@ const f = reactive({
   kind: orig?.kind ?? 'expense', name_ro: orig?.name_ro ?? '', name_ru: orig?.name_ru ?? '', icon: orig?.icon ?? 'tag',
   budget: orig?.budget ? String(orig.budget).replace('.', ',') : '',
   bucket: orig?.bucket ?? '',
+  for_member_id: orig?.for_member_id ?? '',
 })
 const err = ref('')
 async function submit() {
@@ -27,6 +28,7 @@ async function submit() {
       name_ro: f.name_ro.trim(), name_ru: f.name_ru.trim() || f.name_ro.trim(), icon: f.icon,
       budget: f.kind === 'expense' && parseAmount(f.budget) > 0 ? parseAmount(f.budget) : null,
       bucket: f.kind === 'expense' && f.bucket ? f.bucket : null,
+      for_member_id: f.kind === 'expense' && f.for_member_id ? f.for_member_id : null,
     })
     haptic('success'); router.back()
   } catch (e) { console.error(e); err.value = t('error', e) }
@@ -53,6 +55,14 @@ async function archive() {
         <button type="button" :class="{ on: f.bucket === 'needs' }" @click="f.bucket = 'needs'">{{ t('r53_needs') }}</button>
         <button type="button" :class="{ on: f.bucket === 'wants' }" @click="f.bucket = 'wants'">{{ t('r53_wants') }}</button>
       </div>
+    </div>
+    <div v-if="f.kind === 'expense' && S.members.length > 1" class="fld">
+      <span class="lbl">{{ t('forWhomDefault') }}</span>
+      <div class="bf-chips">
+        <button type="button" class="bf-chip" :class="{ 'bf-chip--on': !f.for_member_id }" @click="f.for_member_id = ''">{{ t('forAll') }}</button>
+        <button v-for="m in S.members" :key="m.id" type="button" class="bf-chip" :class="{ 'bf-chip--on': f.for_member_id === m.id }" @click="f.for_member_id = m.id"><span :class="`bf-dot bf-p${m.color}`"></span>{{ m.name }}</button>
+      </div>
+      <p class="hint" style="margin: 0;">{{ t('forWhomHint') }}</p>
     </div>
     <div class="fld">
       <span class="lbl">{{ t('icon') }}</span>

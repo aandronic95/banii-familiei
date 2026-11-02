@@ -4,6 +4,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { loanForRecurring, nextOccurrence, nextUnpaid } from "../_shared/loan.ts";
 import { ratesFor } from "../_shared/bnm.ts";
+import { weeklyText, type WeekTx } from "../_shared/weekly.ts";
 import { accruedInterest, couponDates } from "../_shared/invest.ts";
 import { nextEventDate, turning } from "../_shared/home.ts";
 import { nowLocalHM, taskButtons, taskLine, T as TT } from "../_shared/tasks.ts";
@@ -37,8 +38,6 @@ const T = {
       d === 0 ? `📈 Azi ajunge la scadență „${name}” (${amt} ${cur}).` : `📈 „${name}” (${amt} ${cur}) ajunge la scadență peste ${d} zile, pe ${date}.`,
     b80: (cat: string, left: string) => `⚠️ Bugetul „${cat}” e consumat 80%. Mai ai ${left} MDL luna asta.`,
     b100: (cat: string, over: string) => `⛔ Bugetul „${cat}” e depășit cu ${over} MDL.`,
-    weekly: (inc: string, exp: string, top: string, bal: string) =>
-      `📊 Săptămâna aceasta\nVenituri: +${inc} MDL\nCheltuieli: −${exp} MDL\n${top ? `Cele mai mari: ${top}\n` : ""}Sold total: ${bal} MDL`,
     ev: (title: string, d: number, turns: number | null, gift: string | null) =>
       `${d === 0 ? "🎉 Azi" : `🎂 Peste ${d} ${d === 1 ? "zi" : "zile"}`}: ${title}${turns ? ` împlinește ${turns} ani` : ""}.${gift ? ` Buget de cadou: ${gift} MDL.` : ""}`,
     meters: (names: string) => `🔢 E ziua indicilor la contoare: ${names}. Scrie-i în aplicație ca să vezi consumul și costul.`,
@@ -63,8 +62,6 @@ const T = {
       d === 0 ? `📈 Сегодня погашение «${name}» (${amt} ${cur}).` : `📈 «${name}» (${amt} ${cur}): погашение через ${d} дн., ${date}.`,
     b80: (cat: string, left: string) => `⚠️ Бюджет «${cat}» использован на 80%. Осталось ${left} MDL.`,
     b100: (cat: string, over: string) => `⛔ Бюджет «${cat}» превышен на ${over} MDL.`,
-    weekly: (inc: string, exp: string, top: string, bal: string) =>
-      `📊 За неделю\nДоходы: +${inc} MDL\nРасходы: −${exp} MDL\n${top ? `Больше всего: ${top}\n` : ""}Общий баланс: ${bal} MDL`,
     ev: (title: string, d: number, turns: number | null, gift: string | null) =>
       `${d === 0 ? "🎉 Сегодня" : `🎂 Через ${d} дн.`}: ${title}${turns ? ` — исполняется ${turns}` : ""}.${gift ? ` Бюджет на подарок: ${gift} MDL.` : ""}`,
     meters: (names: string) => `🔢 День передачи показаний: ${names}. Внесите их в приложении, чтобы увидеть расход и стоимость.`,
@@ -259,30 +256,32 @@ async function weekly(today: string) {
     const members = (mem ?? []) as Member[];
     if (!members.length) continue;
 
-    const { data: txs } = await db.from("transactions").select("kind, amount, category_id, accounts!transactions_account_id_fkey(currency), categories(name_ro, name_ru)")
-      .eq("family_id", f.id).gte("date", from).lte("date", today).neq("kind", "transfer");
-    let inc = 0, exp = 0;
-    const byCat: Record<string, { ro: string; ru: string; v: number }> = {};
+    const pfrom = new Date(Date.parse(today) - 13 * 86400000).toISOString().slice(0, 10);
+    const { data: txs } = await db.from("transactions").select("kind, amount, date, merchant, tags, accounts!transactions_account_id_fkey(currency), categories(name_ro, name_ru)")
+      .eq("family_id", f.id).gte("date", pfrom).lte("date", today).in("kind", ["income", "expense"]);
     // deno-lint-ignore no-explicit-any
-    for (const t of (txs ?? []) as any[]) {
-      const v = toMdl(Number(t.amount), t.accounts?.currency ?? "MDL");
-      if (t.kind === "income") inc += v;
-      else {
-        exp += v;
-        const k = t.category_id ?? "-";
-        byCat[k] ??= { ro: t.categories?.name_ro ?? "Altele", ru: t.categories?.name_ru ?? "Другое", v: 0 };
-        byCat[k].v += v;
-      }
+    const rows: (WeekTx & { tags?: string[]; cur: string; amount: number })[] = ((txs ?? []) as any[]).map((t) => ({
+      kind: t.kind, date: t.date, merchant: t.merchant, mdl: toMdl(Number(t.amount), t.accounts?.currency ?? "MDL"), amount: Number(t.amount), cur: t.accounts?.currency ?? "MDL", tags: t.tags ?? [],
+      cat: t.categories ? { ro: t.categories.name_ro, ru: t.categories.name_ru } : null,
+    }));
+    // călătoria în desfășurare (sau încheiată săptămâna asta)
+    const { data: trips } = await db.from("trips").select("name, tag, currency, budget, start_date, end_date").eq("family_id", f.id).lte("start_date", today).gte("end_date", from).limit(1);
+    let trip = null;
+    if (trips?.length) {
+      const tr = trips[0];
+      const { data: ttx } = await db.from("transactions").select("kind, amount, accounts!transactions_account_id_fkey(currency)").eq("family_id", f.id).contains("tags", [tr.tag]).in("kind", ["income", "expense"]);
+      // deno-lint-ignore no-explicit-any
+      const net = ((ttx ?? []) as any[]).reduce((s, t) => s + (t.kind === "expense" ? 1 : -1) * toMdl(Number(t.amount), t.accounts?.currency ?? "MDL"), 0) / (rates[tr.currency] ?? 1);
+      trip = { name: tr.name, spent: `${fmt(net)} ${tr.currency}`, budget: tr.budget != null ? `${fmt(Number(tr.budget))} ${tr.currency}` : null };
     }
-    const top = Object.values(byCat).sort((a, b) => b.v - a.v).slice(0, 3);
 
     const { data: accs } = await db.from("accounts").select("id, currency").eq("family_id", f.id).eq("archived", false).neq("type", "asset");
     const { data: bals } = await db.from("account_balances").select("account_id, balance").in("account_id", (accs ?? []).map((a) => a.id));
     const curOf = Object.fromEntries((accs ?? []).map((a) => [a.id, a.currency]));
     const total = (bals ?? []).reduce((s, b) => s + toMdl(Number(b.balance), curOf[b.account_id]), 0);
 
-    await send(members, "weekly", (lg) =>
-      T[lg].weekly(fmt(inc), fmt(exp), top.map((c) => `${lg === "ru" ? c.ru : c.ro} ${fmt(c.v)}`).join(", "), fmt(total)));
+    const input = { from, to: today, cur: rows.filter((r) => r.date >= from), prev: rows.filter((r) => r.date < from), total, trip };
+    await send(members, "weekly", (lg) => weeklyText(input, lg));
   }
 }
 

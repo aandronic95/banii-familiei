@@ -11,6 +11,8 @@ import { detectSubscriptions, suggestBudget } from './lib/insights.js'
 import { schedule } from './lib/loan.js'
 import { nextDue, parseShopping } from './lib/taskparse.js'
 import { nextEventDate, turning, daysBetween as daysBetweenISO } from './lib/home.js'
+import { tripStats, tripOn } from './lib/trip.js'
+import { priceIndex } from './lib/prices.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -38,6 +40,7 @@ export const S = reactive({
   readings: [],
   wishes: [],
   events: [],
+  trips: [],
   rates: { MDL: 1 },
   rateDates: {},
   offline: false,   // lucrăm din copia locală, fără server
@@ -49,11 +52,11 @@ const TABLES = {
   accounts: 'accounts', categories: 'categories', transactions: 'transactions', loans: 'loans',
   loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments', recurring: 'recurring', debts: 'debts', goals: 'goals', templates: 'templates',
   tasks: 'tasks', task_comments: 'taskComments', shopping_items: 'shopping',
-  meters: 'meters', meter_readings: 'readings', wishes: 'wishes', events: 'events',
+  meters: 'meters', meter_readings: 'readings', wishes: 'wishes', events: 'events', trips: 'trips',
 }
 
 // ───────────── Copia locală și coada offline ─────────────
-const DATA_KEYS = ['family', 'members', 'accounts', 'categories', 'transactions', 'loans', 'loanPayments', 'cars', 'carEvents', 'investments', 'recurring', 'debts', 'goals', 'templates', 'tasks', 'taskComments', 'shopping', 'meters', 'readings', 'wishes', 'events']
+const DATA_KEYS = ['family', 'members', 'accounts', 'categories', 'transactions', 'loans', 'loanPayments', 'cars', 'carEvents', 'investments', 'recurring', 'debts', 'goals', 'templates', 'tasks', 'taskComments', 'shopping', 'meters', 'readings', 'wishes', 'events', 'trips']
 const snapKey = () => 'snap:' + S.tgId
 const queueKey = () => 'queue:' + S.tgId
 let queue = []
@@ -219,7 +222,7 @@ async function fetchAll(table, order = 'id') {
 }
 
 export async function loadAll() {
-  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping, meters, readings, wishes, events, rates] = await Promise.all([
+  const [fam, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping, meters, readings, wishes, events, trips, rates] = await Promise.all([
     supabase.from('families').select('*').limit(1).single(),
     fetchAll('members', 'created_at'),
     fetchAll('accounts', 'sort'),
@@ -241,11 +244,12 @@ export async function loadAll() {
     fetchAll('meter_readings', 'date').catch(() => []),
     fetchAll('wishes', 'created_at').catch(() => []),
     fetchAll('events', 'date').catch(() => []),
+    fetchAll('trips', 'start_date').catch(() => []),
     supabase.from('rates').select('*').order('date', { ascending: false }).limit(20),
   ])
   if (fam.error) throw fam.error
   lastLoad = Date.now()
-  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping, meters, readings, wishes, events })
+  Object.assign(S, { family: fam.data, members, accounts, categories, transactions, loans, loanPayments, cars, carEvents, investments, recurring, debts, goals, templates, tasks, taskComments, shopping, meters, readings, wishes, events, trips })
   for (const r of rates.data || []) {
     if (!S.rateDates[r.currency]) { S.rates[r.currency] = Number(r.rate); S.rateDates[r.currency] = r.date }
   }
@@ -325,7 +329,7 @@ function maybeAlert(rows) {
 }
 
 // Ce se poate „Anula” după ștergere (fără rânduri copil care s-ar pierde în cascadă)
-const UNDOABLE = ['transactions', 'car_events', 'debts', 'goals', 'recurring', 'investments', 'tasks', 'shopping_items', 'meter_readings', 'wishes', 'events']
+const UNDOABLE = ['transactions', 'car_events', 'debts', 'goals', 'recurring', 'investments', 'tasks', 'shopping_items', 'meter_readings', 'wishes', 'events', 'trips']
 
 export async function remove(table, id, { onFinal, silent = false } = {}) {
   const key = TABLES[table]
@@ -919,10 +923,30 @@ export const upcomingEvents = computed(() => {
 
 export const txCurrency = (t) => accountById(t.account_id)?.currency || 'MDL'
 
+// ───────────── Pentru cine e cheltuiala ─────────────
+// Explicit pe tranzacție, altfel implicit din categorie („Grădiniță” → copilul), altfel comună
+export const forMemberOf = (x) => x.for_member_id || categoryById(x.category_id)?.for_member_id || null
+// Cât costă fiecare: direct + partea egală din cheltuielile comune
+export function costPerPerson(byFor) {
+  const n = S.members.length || 1
+  const common = byFor['-'] || 0
+  const rows = S.members.map((m) => ({ m, direct: byFor[m.id] || 0, share: common / n })).map((r) => ({ ...r, total: r.direct + r.share }))
+  return { common, rows: rows.sort((a, b) => b.total - a.total) }
+}
+
+// ───────────── Călătorii ─────────────
+export const tripTxs = (trip) => S.transactions.filter((x) => (x.tags || []).includes(trip.tag))
+export function tripStatsOf(trip, today = todayISO()) {
+  const rate = S.rates[trip.currency] ?? 1
+  const txs = tripTxs(trip).map((x) => ({ ...x, currency: txCurrency(x) }))
+  return tripStats(trip, txs, (a, cur) => toMdl(a, cur) / rate, today)
+}
+export const activeTrip = (iso = todayISO()) => tripOn(S.trips, iso)
+
 // Sume într-o perioadă (în MDL); transferurile nu intră în venituri/cheltuieli
 export function periodSums(from, to) {
   let inc = 0, exp = 0
-  const byCat = {}, byMember = {}
+  const byCat = {}, byMember = {}, byFor = {}
   for (const t of S.transactions) {
     if (t.date < from || t.date > to || !['income', 'expense'].includes(t.kind)) continue
     const v = toMdl(t.amount, txCurrency(t))
@@ -933,9 +957,11 @@ export function periodSums(from, to) {
       byCat[c] = (byCat[c] || 0) + v
       const m = t.member_id || '-'
       byMember[m] = (byMember[m] || 0) + v
+      const fm = forMemberOf(t) || '-'
+      byFor[fm] = (byFor[fm] || 0) + v
     }
   }
-  return { inc, exp, byCat, byMember }
+  return { inc, exp, byCat, byMember, byFor }
 }
 
 export function monthRange(d = todayISO()) {
@@ -1040,3 +1066,6 @@ export function goalProgress(g) {
   const target = Number(g.target) || 1
   return { saved, target, pct: Math.max(0, Math.min(1, saved / target)), left: Math.max(0, target - saved) }
 }
+
+// Istoricul prețurilor din bonurile cu produse
+export const prices = computed(() => priceIndex(S.transactions.filter((x) => x.kind === 'expense' && Array.isArray(x.items) && x.items.length)))

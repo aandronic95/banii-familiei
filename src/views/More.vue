@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, save, savePrefs, setRate, refreshRates, debtMdl, investMdl, debtsSummary } from '../store.js'
+import { S, me, save, savePrefs, setRate, refreshRates, debtMdl, investMdl, debtsSummary, activeTrip } from '../store.js'
 import { t, lang, setLang } from '../lib/i18n.js'
 import { parseAmount, money0, daysUntil, todayISO, dateLong } from '../lib/format.js'
 import { haptic, homeShortcutSupported, homeShortcutStatus, addHomeShortcut } from '../lib/telegram.js'
@@ -151,6 +151,8 @@ const links = computed(() => [
   { to: '/tasks', icon: 'check', title: t('tasksTitle'), sub: t('tasksSub') },
   { to: '/events', icon: 'cake', title: t('evTitle'), sub: t('evSub') },
   { to: '/wishes', icon: 'star', title: t('wishTitle'), sub: t('wishSub') },
+  { to: '/trips', icon: 'globe', title: t('tripTitle'), sub: activeTrip() ? activeTrip().name : t('tripSub') },
+  { to: '/prices', icon: 'tag', title: t('prTitle'), sub: t('prSub') },
   { to: '/meters', icon: 'gauge', title: t('mtrTitle'), sub: t('mtrSub') },
   { to: '/transactions', icon: 'list', title: t('transactions'), sub: '' },
   { to: '/apple-pay', icon: 'card', title: t('apTitle'), sub: t('apMenuSub') },

@@ -1,6 +1,7 @@
 // Primește plățile Apple Pay trimise de Scurtături (iOS → Automatizare „Tranzacție”)
 // și le salvează ca cheltuieli. Autentificare: cheia secretă a telefonului, în corpul cererii.
 import { bigSpendAlert } from "../_shared/alert.ts";
+import { tripTag, withTag } from "../_shared/trip.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { tg } from "../_shared/telegram.ts";
 import { guessCategoryIcon, matchAccount, parseWalletAmount } from "../_shared/wallet.ts";
@@ -98,11 +99,12 @@ A fost doar un test, nu s-a salvat nimic. La următoarea plată cu Apple Pay, ch
     if (!carId) carKind = null;
   }
 
+  const trip = await tripTag(db, dev.family_id, todayLocal()).catch(() => null);
   const { data: tx, error } = await db.from("transactions").insert({
     family_id: dev.family_id, kind: "expense", amount: parsed.amount, account_id: account.id,
     category_id: categoryId, member_id: dev.member_id, date: todayLocal(), merchant,
     note: "Apple Pay" + (sure ? "" : " · verifică contul"), created_by: dev.user_id,
-    car_id: carId, car_kind: carKind,
+    car_id: carId, car_kind: carKind, tags: withTag([], trip),
   }).select("id").single();
   if (error || !tx) return reply({ ok: false, error: "save_failed", message: "Nu am putut salva" }, 500);
 

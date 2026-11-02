@@ -1,6 +1,7 @@
 // Webhook-ul botului: /start (cu sau fără invitație), /id, /ajutor, /sarcini, /cumparaturi,
 // cheltuieli scrise direct („cafea 45”), sarcini („sarcină: …”), cumpărături („cumpără: …”) și butoanele „Anulează” / „Gata”.
 import { bigSpendAlert } from "../_shared/alert.ts";
+import { tripTag, withTag } from "../_shared/trip.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { accountChoices, accountKeyboard, convertAmount, parseQuick, pickAccount } from "../_shared/quick.ts";
@@ -63,10 +64,11 @@ async function saveQuick(member: { id: string; family_id: string; user_id: strin
     if (!carId) carKind = null;
   }
 
+  const trip = q.kind === "expense" ? await tripTag(db, member.family_id, todayLocal()).catch(() => null) : null;
   const { data: tx, error } = await db.from("transactions").insert({
     family_id: member.family_id, kind: q.kind, amount: q.amount, account_id: account.id, category_id: categoryId,
     member_id: member.id, date: todayLocal(), merchant: q.description, note: "Telegram", created_by: member.user_id,
-    car_id: carId, car_kind: carKind, tags: q.tags,
+    car_id: carId, car_kind: carKind, tags: withTag(q.tags, trip),
   }).select("id").single();
   if (error || !tx) return { error: "save" as const };
   if (q.kind === "expense") await bigSpendAlert(db, BOT_TOKEN, APP_URL, tx.id).catch(() => 0);
@@ -244,11 +246,12 @@ Deno.serve(async (req) => {
 
   // ── Sarcini („sarcină: …”) și cumpărături („cumpără: …”) ──
   const pt = parseTask(text, { today: todayLocal(), members: famMembers ?? [] });
-  if (pt?.kind === "shopping" && pt.items.length) {
-    const { error } = await db.from("shopping_items").insert(pt.items.map((i) => ({ family_id: member.family_id, name: i.name, qty: i.qty, created_by: member.user_id })));
+  const shopItems = pt?.kind === "shopping" ? pt.items ?? [] : [];
+  if (shopItems.length) {
+    const { error } = await db.from("shopping_items").insert(shopItems.map((i) => ({ family_id: member.family_id, name: i.name, qty: i.qty, created_by: member.user_id })));
     await tg(BOT_TOKEN, "sendMessage", {
       chat_id: chatId,
-      text: error ? (ru ? "Не удалось сохранить." : "Nu am putut salva.") : TT[lg].shopAdded(pt.items.length) + "\n" + pt.items.map((i) => `• ${i.name}${i.qty ? " — " + i.qty : ""}`).join("\n"),
+      text: error ? (ru ? "Не удалось сохранить." : "Nu am putut salva.") : TT[lg].shopAdded(shopItems.length) + "\n" + shopItems.map((i) => `• ${i.name}${i.qty ? " — " + i.qty : ""}`).join("\n"),
       reply_markup: { inline_keyboard: [[{ text: TT[lg].open, web_app: { url: `${APP_URL}?view=shopping` } }]] },
     });
     return ok();
