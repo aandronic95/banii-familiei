@@ -9,19 +9,19 @@ import { type Acc, guessCategoryIcon, matchAccount } from "./wallet.ts";
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 const WORDS: [RegExp, string][] = [
-  [/^(benzin|motorin|carburant|gaz auto|alimentare|plin)/, "car"],
-  [/^(masin|auto|service|vulcaniz|spalat|parcare|rca|casco|amend)/, "car"],
-  [/^(produse|aliment|piat|paine|lapte|carne|legum|fruct|supermarket|magazin|cumparatur)/, "cart"],
-  [/^(cafea|cafe|restaurant|pizza|burger|shaorm|cinema|film|bar|bere|vin|livrare|glovo|distract|cadou)/, "ticket"],
-  [/^(farmac|medicament|pastil|doctor|medic|analiz|stomat|dentist|sanatate|spital)/, "heart"],
-  [/^(haine|incaltaminte|pantofi|geaca|tricou|blug)/, "shirt"],
-  [/^(gradinit|scoal|rechizit|jucari|copil|cerc|dans|inot|pamper|scutec|lectii)/, "school"],
-  [/^(chirie|reparat|mobil|casa|curatenie|detergent|ikea|bricolaj)/, "home"],
-  [/^(lumin|curent|energie|gaz|apa|internet|telefon|abonament|utilit|intretinere)/, "bolt"],
-  [/^(rata|credit|banca)/, "bank"],
+  [/^(benzin|motorin|carburant|gaz auto|alimentare|plin|бензин|дизел|заправк|солярк)/, "car"],
+  [/^(masin|auto|service|vulcaniz|spalat|parcare|rca|casco|amend|машин|сервис|шиномонтаж|мойк|парковк|штраф|такси)/, "car"],
+  [/^(produse|aliment|piat|paine|lapte|carne|legum|fruct|supermarket|magazin|cumparatur|продукт|хлеб|молок|мясо|овощ|фрукт|рынок|магазин|супермаркет)/, "cart"],
+  [/^(cafea|cafe|restaurant|pizza|burger|shaorm|cinema|film|bar|bere|vin|livrare|glovo|distract|cadou|кофе|кафе|ресторан|пицц|кино|бар|пиво|вино|доставк|подар)/, "ticket"],
+  [/^(farmac|medicament|pastil|doctor|medic|analiz|stomat|dentist|sanatate|spital|аптек|лекарств|врач|доктор|анализ|стоматолог|больниц)/, "heart"],
+  [/^(haine|incaltaminte|pantofi|geaca|tricou|blug|одежд|обувь|куртк|джинс|футболк)/, "shirt"],
+  [/^(gradinit|scoal|rechizit|jucari|copil|cerc|dans|inot|pamper|scutec|lectii|садик|детсад|школ|игрушк|кружок|памперс|подгузник)/, "school"],
+  [/^(chirie|reparat|mobil|casa|curatenie|detergent|ikea|bricolaj|аренд|ремонт|мебел|уборк)/, "home"],
+  [/^(lumin|curent|energie|gaz|apa|internet|telefon|abonament|utilit|intretinere|свет|электр|газ|вода|интернет|телефон|коммунал|квартплат)/, "bolt"],
+  [/^(rata|credit|banca|кредит|ипотек|банк)/, "bank"],
 ];
-const INCOME = /^(salariu|venit|primit|bonus|avans|alocat|dobanda|cashback|rambursare)/;
-const CASH = /^(cash|numerar|portofel|bani gheata|lei cash)$/;
+const INCOME = /^(salariu|venit|primit|bonus|avans|alocat|dobanda|cashback|rambursare|зарплат|доход|получил|аванс|преми|кешбэк|кэшбэк)/;
+const CASH = /^(cash|numerar|portofel|bani gheata|lei cash|наличные|наличными|нал|кеш|кэш)$/;
 
 export type Quick = {
   kind: "expense" | "income";
@@ -59,12 +59,12 @@ export function parseQuick(input: string): Quick | null {
   const descWords: string[] = [];
   const accountWords: string[] = [];
   for (const w of words) {
-    const n = norm(w).replace(/[^a-z0-9]/g, "");
+    const n = norm(w).replace(/[^\p{L}\p{N}]/gu, "");
     if (!n) continue;
     if (CASH.test(n)) { cash = true; continue; }
     if (/^(card|cardul|pe)$/.test(n)) continue;
     if (kind === "expense" && INCOME.test(n) && !descWords.length) kind = "income";
-    if (!categoryIcon) for (const [re, icon] of WORDS) if (re.test(n)) { categoryIcon = icon; if (/^(benzin|motorin|carburant|alimentare|plin)/.test(n)) isFuel = true; break; }
+    if (!categoryIcon) for (const [re, icon] of WORDS) if (re.test(n)) { categoryIcon = icon; if (/^(benzin|motorin|carburant|alimentare|plin|бензин|дизел|заправк|солярк)/.test(n)) isFuel = true; break; }
     descWords.push(w);
     accountWords.push(n);
   }

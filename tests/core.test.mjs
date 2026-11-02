@@ -543,3 +543,59 @@ test('rezumat săptămânal: bare, top 3, comparație', { skip: !weeklyTs }, () 
   assert.match(txt, /3\. Alimente — 300 MDL/)
   assert.ok(weeklyText({ from: '2026-10-27', to: '2026-11-02', total: 0, cur: [], prev: [] }, 'ru').includes('расходов нет'))
 })
+
+const voiceTs = await import('../supabase/functions/_shared/voice.ts').catch((e) => { console.error(e); return null })
+test('voce: fraza vorbită devine mesaj scurt', { skip: !voiceTs || !quickTs }, () => {
+  const { normalizeSpoken: n, voiceConfig } = voiceTs
+  assert.equal(n('Am cumpărat pâine de 12 lei.'), 'pâine 12 lei')
+  assert.equal(n('Cafea, 45 de lei.'), 'Cafea 45 lei')
+  assert.equal(n('Benzină, 1,200 lei, cash.'), 'Benzină 1200 lei cash')
+  assert.equal(n('Venit salariu 14200'), '+salariu 14200')
+  assert.equal(n('Купила хлеб за 12 леев.'), 'хлеб 12 lei')
+  assert.equal(n('Sarcină, plătește lumina 450 lei pe 15.'), 'Sarcină: plătește lumina 450 lei pe 15')
+  const q = quickTs.parseQuick(n('Кофе 45 леев'))
+  assert.deepEqual([q.amount, q.description, q.categoryIcon], [45, 'Кофе', 'ticket'])
+  assert.equal(quickTs.parseQuick('бензин 900 наличными').cash, true)
+  assert.equal(voiceConfig(() => undefined), null)
+  assert.equal(voiceConfig((k) => (k === 'VOICE_API_KEY' ? 'gsk_x' : undefined)).model, 'whisper-large-v3-turbo')
+  assert.match(voiceConfig((k) => (k === 'VOICE_API_KEY' ? 'sk-x' : undefined)).url, /openai/)
+})
+
+test('extras PDF: coloane după antet, descriere pe două rânduri, antet repetat', async () => {
+  const { pdfTable } = await import('../src/lib/pdftable.js')
+  const { detectColumns, toTransactions } = await import('../src/lib/csv.js')
+  const it = (str, x, y, page = 1, w = str.length * 4) => ({ str, x, y, w, page })
+  const head = (y, p) => [it('Data', 40, y, p), it('Descriere', 120, y, p), it('Suma', 380, y, p), it('Sold', 480, y, p)]
+  const items = [it('EXTRAS MAIB', 40, 20), ...head(60, 1),
+    it('02.10.2026', 40, 75), it('Linella Botanica', 120, 75), it('-385,50', 372, 75), it('9 614,50', 470, 75),
+    it('05.10.2026', 40, 90), it('Transfer primit', 120, 90), it('+16 500,00', 364, 90), it('26 114,50', 466, 90),
+    it('de la ION', 120, 101),
+    ...head(60, 2), it('07.10.2026', 40, 75, 2), it('Petrom', 120, 75, 2), it('-950,00', 372, 75, 2), it('25 164,50', 466, 75, 2)]
+  const t = pdfTable(items)
+  assert.equal(t.mode, 'table')
+  const tx = toTransactions(t.rows, detectColumns(t.rows))
+  assert.deepEqual(tx.map((x) => [x.date, x.kind, x.amount, x.description]), [
+    ['2026-10-02', 'expense', 385.5, 'Linella Botanica'], ['2026-10-05', 'income', 16500, 'Transfer primit de la ION'], ['2026-10-07', 'expense', 950, 'Petrom']])
+  // fără antet: dată + descriere + sumă (+ sold)
+  const t2 = pdfTable([it('01.10.2026', 40, 50), it('Kaufland', 110, 50), it('1 234,56', 380, 50), it('8 000,00', 480, 50), it('03.10.2026', 40, 64), it('Salariu', 110, 64), it('+12 800,00', 370, 64), it('20 800,00', 476, 64)])
+  assert.equal(t2.mode, 'lines')
+  assert.deepEqual(toTransactions(t2.rows, detectColumns(t2.rows)).map((x) => [x.kind, x.amount]), [['expense', 1234.56], ['income', 12800]])
+})
+
+test('demo: date inventate coerente și client fără server', async () => {
+  const { demoData, demoClient } = await import('../src/lib/demo.js')
+  const d = demoData('2026-11-02')
+  assert.equal(d.members.length, 3)
+  assert.ok(d.transactions.length > 150)
+  const ids = new Set(d.accounts.map((a) => a.id)), cats = new Set(d.categories.map((c) => c.id))
+  assert.ok(d.transactions.every((x) => ids.has(x.account_id) && (!x.category_id || cats.has(x.category_id))))
+  assert.ok(d.transactions.some((x) => x.items?.length) && d.transactions.some((x) => x.tags.includes('bulgaria')))
+  assert.deepEqual(demoData('2026-11-02').transactions.map((x) => x.amount), d.transactions.map((x) => x.amount)) // repetabil
+  const S = { ...d, userId: d.userId }
+  const c = demoClient(S, { transactions: 'transactions' })
+  const ins = await c.from('transactions').insert({ amount: 5 }).select().single()
+  assert.ok(ins.data.id && ins.data.amount === 5 && !ins.error)
+  const up = await c.from('transactions').update({ amount: 7 }).eq('id', d.transactions[0].id).select().single()
+  assert.equal(up.data.amount, 7); assert.equal(up.data.account_id, d.transactions[0].account_id)
+  assert.equal((await c.functions.invoke('docs')).error, null)
+})

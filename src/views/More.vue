@@ -1,10 +1,10 @@
 <script setup>
 import { reactive, computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, save, savePrefs, setRate, refreshRates, debtMdl, investMdl, debtsSummary, activeTrip } from '../store.js'
+import { S, me, save, savePrefs, setRate, refreshRates, debtMdl, investMdl, debtsSummary, activeTrip, enterDemo, exitDemo } from '../store.js'
 import { t, lang, setLang } from '../lib/i18n.js'
 import { parseAmount, money0, daysUntil, todayISO, dateLong } from '../lib/format.js'
-import { haptic, homeShortcutSupported, homeShortcutStatus, addHomeShortcut } from '../lib/telegram.js'
+import { haptic, confirmDialog, homeShortcutSupported, homeShortcutStatus, addHomeShortcut } from '../lib/telegram.js'
 import { supabase } from '../lib/supabase.js'
 import { bioState, requestBio, authenticate } from '../lib/biometric.js'
 import { isLockEnabled, setLockEnabled, isBioEnabled, setBioEnabled, pinStatus, pinVerify, pinSet } from '../lib/lock.js'
@@ -139,6 +139,14 @@ const carNote = computed(() => {
   const e = S.carEvents.filter((x) => !x.done && x.due_date).sort((a, b) => a.due_date.localeCompare(b.due_date))[0]
   return e ? t('expiresIn', e.title, t('inDays', Math.max(0, daysUntil(e.due_date)))) : ''
 })
+async function openLink_(to) {
+  if (to === '#exit') return exitDemo()
+  if (to === '#demo') {
+    if (!(await confirmDialog(t('demoQ')))) return
+    enterDemo(); router.push('/'); return
+  }
+  router.push(to)
+}
 const links = computed(() => [
   { to: '/calendar', icon: 'clock', title: t('calendarTitle'), sub: t('calendarSub') },
   { to: '/goals', icon: 'piggy', title: t('goalsTitle'), sub: S.goals.length ? S.goals.map((g) => g.name).slice(0, 3).join(', ') : t('goalsSub') },
@@ -160,6 +168,7 @@ const links = computed(() => [
   { to: '/family', icon: 'users', title: t('family'), sub: S.members.map((m) => m.name).join(', ') },
   { to: '/history', icon: 'clock', title: t('histTitle'), sub: t('histSub') },
   { to: '/restore', icon: 'upload', title: t('rsTitle'), sub: t('rsSub') },
+  S.demo ? { to: '#exit', icon: 'eye', title: t('demoExit'), sub: t('demoBar') } : { to: '#demo', icon: 'eye', title: t('demoTitle'), sub: t('demoSub') },
 ])
 
 async function saveNotify() {
@@ -183,7 +192,7 @@ const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetS
     <h1 class="h-title">{{ t('more') }}</h1>
 
     <div class="bf-list">
-      <button v-for="l in links" :key="l.to" type="button" class="bf-row bf-row--tap" @click="router.push(l.to)">
+      <button v-for="l in links" :key="l.to" type="button" class="bf-row bf-row--tap" @click="openLink_(l.to)">
         <div class="bf-row__icon"><Icon :name="l.icon" /></div>
         <div class="bf-row__body"><div class="bf-row__title">{{ l.title }}</div><div v-if="l.sub" class="bf-row__sub">{{ l.sub }}</div></div>
         <span class="chev" aria-hidden="true">›</span>

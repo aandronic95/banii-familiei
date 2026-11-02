@@ -13,6 +13,7 @@ import { nextDue, parseShopping } from './lib/taskparse.js'
 import { nextEventDate, turning, daysBetween as daysBetweenISO } from './lib/home.js'
 import { tripStats, tripOn } from './lib/trip.js'
 import { priceIndex } from './lib/prices.js'
+import { demoData, demoClient } from './lib/demo.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -46,6 +47,7 @@ export const S = reactive({
   offline: false,   // lucrăm din copia locală, fără server
   cachedAt: null,   // când au fost luate datele din copia locală
   pending: 0,       // modificări care așteaptă internetul
+  demo: false,      // familie inventată, nimic nu se salvează
 })
 
 const TABLES = {
@@ -63,14 +65,14 @@ let queue = []
 let persistT = 0
 
 function schedulePersist() {
-  if (!S.tgId || !S.family) return
+  if (!S.tgId || !S.family || S.demo) return
   clearTimeout(persistT)
   persistT = setTimeout(() => {
     const data = Object.fromEntries(DATA_KEYS.map((k) => [k, S[k]]))
     cacheSet(snapKey(), { userId: S.userId, at: Date.now(), data, rates: S.rates, rateDates: S.rateDates })
   }, 1200)
 }
-function persistQueue() { S.pending = queue.length; cacheSet(queueKey(), queue) }
+function persistQueue() { S.pending = queue.length; if (!S.demo) cacheSet(queueKey(), queue) }
 async function forgetDevice() { await cacheDel(snapKey()); await cacheDel(queueKey()); queue = []; S.pending = 0 }
 
 // Modificările din coadă se aplică peste datele aduse de pe server, ca să nu dispară de pe ecran
@@ -107,7 +109,7 @@ export async function flushQueue() {
 
 let syncing = false
 export async function syncNow() {
-  if (syncing || !S.userId) return
+  if (syncing || !S.userId || S.demo) return
   syncing = true
   try {
     const { data } = await supabase.auth.getSession()
@@ -119,9 +121,30 @@ export async function syncNow() {
 }
 if (typeof window !== 'undefined') window.addEventListener('online', () => { if (S.offline || S.pending) syncNow() })
 
+// ───────────── Modul demo ─────────────
+// O familie inventată, ca aplicația să poată fi arătată; clientul Supabase e înlocuit cu unul din memorie
+const DEMO_KEY = 'bf-demo'
+export const demoWanted = () => { try { return sessionStorage.getItem(DEMO_KEY) === '1' } catch (_) { return false } }
+export function enterDemo() {
+  try { sessionStorage.setItem(DEMO_KEY, '1') } catch (_) {}
+  if (channel) { try { supabase.removeChannel(channel) } catch (_) {} channel = null }
+  const fake = demoClient(S, TABLES)
+  for (const k of ['from', 'rpc', 'channel', 'removeChannel', 'functions', 'storage']) Object.defineProperty(supabase, k, { value: fake[k], configurable: true, writable: true })
+  queue = []
+  const data = demoData(todayISO())
+  Object.assign(S, data, { demo: true, offline: false, pending: 0, cachedAt: null, tgId: null })
+  Object.assign(S.rates, { MDL: 1, EUR: S.rates.EUR > 1 ? S.rates.EUR : 19.4, USD: S.rates.USD > 1 ? S.rates.USD : 17.2 })
+  S.status = 'ready'
+}
+export function exitDemo() {
+  try { sessionStorage.removeItem(DEMO_KEY) } catch (_) {}
+  location.reload()
+}
+
 // ───────────── Autentificare prin Telegram ─────────────
 export async function start() {
   S.status = 'loading'
+  if (demoWanted()) return enterDemo()
   if (!inTelegram()) { S.status = 'not_telegram'; return }
   S.tgId = tg.initDataUnsafe?.user?.id ?? null
   const invite = new URLSearchParams(location.search).get('invite') || ''
@@ -198,7 +221,7 @@ async function afterLogin() {
 // Reîncarcă datele când aplicația revine în prim-plan (conexiunea live se poate pierde în fundal)
 let lastLoad = 0
 export async function refreshIfStale(maxAgeMs = 30000) {
-  if (S.status !== 'ready') return
+  if (S.status !== 'ready' || S.demo) return
   if (S.offline || S.pending) return syncNow()
   if (Date.now() - lastLoad < maxAgeMs) return
   try { await loadAll(); applyQueueLocally(); subscribe(); schedulePersist() } catch (e) { console.warn('reîncărcare', e) }

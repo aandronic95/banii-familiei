@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, watch, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, start, refreshIfStale } from './store.js'
+import { S, start, refreshIfStale, enterDemo, exitDemo, demoWanted } from './store.js'
 import { tg, initTelegram, setBack, setChrome, BOT_USERNAME } from './lib/telegram.js'
 import { authenticate, bioState } from './lib/biometric.js'
 import { isLockEnabled, isBioEnabled, setLockEnabled, pinVerify, pinForgot, pinReset } from './lib/lock.js'
@@ -18,7 +18,7 @@ const theme = ref('light')
 
 // Blocare: Face ID (dacă e pornit și merge) sau codul de rezervă, verificat pe server.
 // Se cere la deschidere și după 2 minute în fundal.
-const locked = ref(isLockEnabled())
+const locked = ref(isLockEnabled() && !demoWanted())
 const lockErr = ref('')
 const lockBusy = ref(false)
 const bioOk = ref(false)
@@ -111,6 +111,7 @@ watch(() => [route.fullPath, S.status], () => {
       <h1 class="h-title">{{ t('openInTelegram') }}</h1>
       <p class="muted">{{ t('openInTelegramText') }}</p>
       <a class="bf-btn bf-btn--primary" :href="`https://t.me/${BOT_USERNAME}`">{{ t('openBot') }}</a>
+      <button type="button" class="bf-btn bf-btn--secondary" style="margin-top: 10px; width: 100%;" @click="enterDemo">{{ t('demoTry') }}</button>
     </div>
   </div>
 
@@ -122,6 +123,8 @@ watch(() => [route.fullPath, S.status], () => {
         <div class="bf-balance__label">{{ t('yourId') }}</div>
         <div class="bf-balance__amount" style="font-size: 26px; user-select: all;">{{ S.tgId }}</div>
       </div>
+      <button type="button" class="bf-btn bf-btn--secondary" style="margin-top: 12px; width: 100%;" @click="enterDemo">{{ t('demoTry') }}</button>
+      <p class="hint">{{ t('demoTryHint') }}</p>
     </div>
   </div>
 
@@ -140,6 +143,10 @@ watch(() => [route.fullPath, S.status], () => {
   </div>
 
   <template v-else>
+    <div v-if="S.demo" class="netbar" role="status" style="justify-content: space-between;">
+      <span>{{ t('demoBar') }}</span>
+      <button type="button" class="link" style="padding: 0 4px; font-weight: 700;" @click="exitDemo">{{ t('demoExit') }}</button>
+    </div>
     <button v-if="S.offline || S.pending" type="button" class="netbar" @click="syncNow">
       <span class="netbar__dot" :class="{ 'netbar__dot--off': S.offline }" aria-hidden="true"></span>
       <span>{{ S.offline ? t('offlineBar', S.cachedAt ? new Date(S.cachedAt).toLocaleTimeString(lang === 'ru' ? 'ru-RU' : 'ro-RO', { hour: '2-digit', minute: '2-digit' }) : '') : t('syncing') }}</span>

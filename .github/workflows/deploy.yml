@@ -111,6 +111,7 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       OWNER_TELEGRAM_ID: ${{ secrets.OWNER_TELEGRAM_ID }}
+      VOICE_API_KEY: ${{ secrets.VOICE_API_KEY }}
       APP_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
     steps:
       - name: Verifică secretele
@@ -152,6 +153,12 @@ jobs:
             TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
             OWNER_TELEGRAM_ID="${OWNER_TELEGRAM_ID:-0}" \
             APP_URL="$APP_URL"
+          # Mesajele vocale la bot (opțional): cheie Groq (gsk_…) sau OpenAI (sk-…)
+          if [ -n "$VOICE_API_KEY" ]; then
+            supabase secrets set --project-ref "$PROJECT_REF" VOICE_API_KEY="$VOICE_API_KEY"
+          else
+            supabase secrets unset --project-ref "$PROJECT_REF" VOICE_API_KEY >/dev/null 2>&1 || true
+          fi
       - name: Publică funcțiile
         run: supabase functions deploy --project-ref "$PROJECT_REF"
       - name: Configurează botul Telegram

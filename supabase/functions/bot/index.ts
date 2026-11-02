@@ -2,6 +2,7 @@
 // cheltuieli scrise direct („cafea 45”), sarcini („sarcină: …”), cumpărături („cumpără: …”) și butoanele „Anulează” / „Gata”.
 import { bigSpendAlert } from "../_shared/alert.ts";
 import { tripTag, withTag } from "../_shared/trip.ts";
+import { normalizeSpoken, transcribe, voiceConfig } from "../_shared/voice.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { accountChoices, accountKeyboard, convertAmount, parseQuick, pickAccount } from "../_shared/quick.ts";
@@ -186,10 +187,36 @@ Deno.serve(async (req) => {
   }
 
   const msg = update?.message;
-  if (!msg?.text || msg.chat?.type !== "private") return ok();
-  const text: string = msg.text.trim();
+  if (!msg || msg.chat?.type !== "private") return ok();
   const chatId = msg.chat.id;
   const ruTg = (msg.from?.language_code ?? "").startsWith("ru");
+  let text: string = (msg.text ?? "").trim();
+  // ── Mesaj vocal: îl transcriem și îl tratăm ca pe un mesaj scris ──
+  const voice = msg.voice ?? msg.audio ?? msg.video_note;
+  if (!text && voice?.file_id) {
+    const vm = await memberByTelegram(msg.from.id);
+    if (!vm) return ok(); // doar membrii familiei (transcrierea costă)
+    const vru = vm.lang === "ru" || (!vm.lang && ruTg);
+    const cfg = voiceConfig((k) => Deno.env.get(k));
+    if (!cfg) {
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: vru ? "🎤 Голосовые сообщения не включены. Администратор может включить их, добавив ключ VOICE_API_KEY (см. инструкцию по установке)." : "🎤 Mesajele vocale nu sunt pornite. Administratorul le poate porni adăugând cheia VOICE_API_KEY (vezi ghidul de instalare)." });
+      return ok();
+    }
+    if ((voice.duration ?? 0) > 60) {
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: vru ? "🎤 Слишком длинно — до 60 секунд, пожалуйста." : "🎤 Prea lung — până la 60 de secunde, te rog." });
+      return ok();
+    }
+    try {
+      text = normalizeSpoken(await transcribe(BOT_TOKEN, voice.file_id, vru ? "ru" : "ro", cfg));
+    } catch (e) {
+      console.error("voce", e);
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: vru ? "🎤 Не удалось распознать. Попробуйте ещё раз или напишите текстом." : "🎤 Nu am putut înțelege. Mai încearcă o dată sau scrie textul." });
+      return ok();
+    }
+    if (!text) return ok();
+    await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: `🎤 «${text}»` });
+  }
+  if (!text) return ok();
 
   if (text.startsWith("/id")) {
     await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: (ruTg ? "Ваш Telegram ID: " : "ID-ul tău Telegram: ") + `<code>${msg.from.id}</code>`, parse_mode: "HTML" });

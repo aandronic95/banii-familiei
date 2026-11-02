@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, dateShort } from '../lib/format.js'
 import { parseCSV, detectColumns, toTransactions } from '../lib/csv.js'
+import { pdfItems, pdfTable } from '../lib/pdftable.js'
 import { guessCategoryIcon } from '../../supabase/functions/_shared/wallet.ts'
 import { haptic } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
@@ -28,9 +29,17 @@ async function pick(e) {
   fileName.value = file.name
   try {
     const buf = await file.arrayBuffer()
-    let text = new TextDecoder('utf-8').decode(buf)
-    if (text.includes('�')) text = new TextDecoder('windows-1251').decode(buf) // extrase vechi în chirilică
-    const parsed = parseCSV(text)
+    let parsed
+    if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+      // extras PDF: textul cu poziții → tabel
+      busy.value = true
+      try { parsed = pdfTable(await pdfItems(buf)) } finally { busy.value = false }
+      if (parsed.rows.length < 2) throw new Error('pdf')
+    } else {
+      let text = new TextDecoder('utf-8').decode(buf)
+      if (text.includes('�')) text = new TextDecoder('windows-1251').decode(buf) // extrase vechi în chirilică
+      parsed = parseCSV(text)
+    }
     const c = detectColumns(parsed.rows)
     if (!c) throw new Error('cols')
     rows.value = parsed.rows
@@ -107,7 +116,7 @@ const catOf = (id) => S.categories.find((c) => c.id === id)
       <select id="im-acc" v-model="accountId" class="inp"><option v-for="a in activeAccounts" :key="a.id" :value="a.id">{{ a.name }} · {{ a.currency }}</option></select>
     </div>
 
-    <input ref="fileInput" type="file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel" class="file-hidden" @change="pick">
+    <input ref="fileInput" type="file" accept=".csv,.pdf,text/csv,text/plain,application/pdf,application/vnd.ms-excel" class="file-hidden" @change="pick">
     <button type="button" class="bf-btn bf-btn--secondary bf-btn--block" style="height: 56px; border: 1.5px dashed var(--line);" @click="fileInput.click()">
       <Icon name="list" />{{ fileName || t('importPick') }}
     </button>
