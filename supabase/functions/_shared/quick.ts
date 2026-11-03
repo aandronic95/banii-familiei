@@ -45,6 +45,9 @@ export function parseQuick(input: string): Quick | null {
   if (/^\+/.test(text)) { kind = "income"; text = text.slice(1).trim(); }
   if (/^-/.test(text)) text = text.slice(1).trim();
 
+  // „card 1111” / „cardul *1111”: ultimele cifre ale cardului, nu suma
+  let cardDigits: string | null = null;
+  text = text.replace(/(?:^|\s)(?:de pe |pe |с |по )?(?:card(?:ul)?|карт[аыуе]|карточк[аиу])\s*\*?(\d{4})(?=\s|$)/i, (_m, d) => { cardDigits = d; return " "; }).replace(/\s+/g, " ").trim();
   // Suma: primul număr (cu zecimale și spații de mii), cu monedă lipită sau separată
   const m = text.match(/(?:^|\s)(€|\$)?\s*(\d{1,3}(?:[  ]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(€|\$|eur|euro|usd|dolari?|mdl|lei|l)?(?=\s|$|[.,!])/i);
   if (!m) return null;
@@ -68,6 +71,7 @@ export function parseQuick(input: string): Quick | null {
     descWords.push(w);
     accountWords.push(n);
   }
+  if (cardDigits) accountWords.push(cardDigits);
   if (!categoryIcon && kind === "expense") categoryIcon = guessCategoryIcon(descWords.join(" "));
   if (categoryIcon === "car" && !isFuel && /lukoil|petrom|rompetrol|bemol|tirex|avante/.test(norm(descWords.join(" ")))) isFuel = true;
   const description = descWords.join(" ").replace(/^./, (c) => c.toUpperCase()) || null;
@@ -82,6 +86,9 @@ export function pickAccount(q: Quick, accounts: Acc[], memberId?: string | null)
   }
   if (q.accountWord) {
     const words = q.accountWord.split(" ");
+    // „de pe card 1111”: ultimele 4 cifre ale cardului
+    const byLast4 = list.find((a) => a.last4 && words.includes(String(a.last4)));
+    if (byLast4) return byLast4;
     const hit = list.find((a) => {
       const names = [a.name, a.bank, a.wallet_alias].filter(Boolean).map((x) => norm(String(x)));
       return names.some((nm) => words.some((w) => w.length >= 3 && (nm.split(/\s+/).includes(w) || nm === w)));
@@ -108,9 +115,10 @@ export function convertAmount(amount: number, from: string, to: string, rates: R
 }
 
 // Tastatura: conturile câte două pe rând (✓ la cel ales), apoi Modifică / Anulează
-export function accountKeyboard(txId: string, accounts: { id: string; name: string; currency: string; type: string }[], currentId: string, ru: boolean, appUrl: string) {
+// `currency`: doar conturile în moneda asta (la datorii); numărul din buton rămâne poziția în lista completă
+export function accountKeyboard(txId: string, accounts: { id: string; name: string; currency: string; type: string }[], currentId: string, ru: boolean, appUrl: string, currency?: string) {
   const icon = (a: { type: string }) => (a.type === "cash" ? "💵" : a.type === "deposit" ? "🏦" : a.type === "invest" ? "📈" : "💳");
-  const btn = accounts.map((a, i) => ({
+  const btn = accounts.map((a, i) => ({ a, i })).filter(({ a }) => !currency || a.currency === currency).map(({ a, i }) => ({
     text: `${a.id === currentId ? "✓ " : icon(a) + " "}${a.name}${a.currency !== "MDL" ? " · " + a.currency : ""}`.slice(0, 40),
     callback_data: `acc:${txId}:${i}`,
   }));

@@ -8,9 +8,15 @@ import Icon from '../components/Icon.vue'
 
 const router = useRouter()
 const showSettled = ref(false)
+const noMove = (d) => {
+  const back = d.direction === 'owed_to_us' ? 'divest' : 'invest'
+  const moved = S.transactions.filter((x) => x.debt_id === d.id && x.kind === back).reduce((s2, x) => s2 + Number(x.amount), 0)
+  return Number(d.paid) - moved > 0.005
+}
 const groups = computed(() => ['owed_to_us', 'we_owe'].map((dir) => ({
   dir,
-  items: S.debts.filter((d) => d.direction === dir && (showSettled.value || !d.settled))
+  // o datorie închisă fără mișcare pe cont rămâne la vedere, ca să-i alegi cardul
+  items: S.debts.filter((d) => d.direction === dir && (showSettled.value || !d.settled || noMove(d)))
     .sort((a, b) => Number(a.settled) - Number(b.settled) || (a.due_date || '9999').localeCompare(b.due_date || '9999')),
 })).filter((g) => g.items.length))
 const hasSettled = computed(() => S.debts.some((d) => d.settled))
@@ -52,7 +58,7 @@ const late = (d) => !d.settled && d.due_date && daysUntil(d.due_date) < 0
           <span class="av" style="box-shadow: inset 0 0 0 2px var(--line);">{{ d.person.slice(0, 1).toUpperCase() }}</span>
           <div class="bf-row__body">
             <div class="bf-row__title">{{ d.person }}</div>
-            <div class="bf-row__sub" :style="late(d) ? 'color: var(--danger);' : ''">{{ d.settled ? t('settled') : sub(d) }}</div>
+            <div class="bf-row__sub" :style="late(d) ? 'color: var(--danger);' : ''">{{ d.settled ? (noMove(d) ? '⚠️ ' + t('debtNoAcc') : t('settled')) : sub(d) }}</div>
           </div>
           <div class="bf-row__amount" :class="d.settled ? '' : g.dir === 'owed_to_us' ? 'bf-income' : 'bf-expense'">{{ money(d.settled ? d.amount : left(d)) }}<small>{{ d.currency }}</small></div>
         </button>

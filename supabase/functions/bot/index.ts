@@ -188,13 +188,26 @@ Deno.serve(async (req) => {
       // „Alege contul”: mută cheltuiala pe contul ales (cu conversie, dacă moneda diferă)
       const idx = Number(String(cb.data).split(":")[2]);
       const [{ data: tx }, { data: accs }] = await Promise.all([
-        db.from("transactions").select("id, kind, amount, account_id, merchant, category_id, note").eq("id", id).eq("family_id", member.family_id).maybeSingle(),
+        db.from("transactions").select("id, kind, amount, account_id, merchant, category_id, note, debt_id").eq("id", id).eq("family_id", member.family_id).maybeSingle(),
         db.from("accounts").select("id, name, type, currency, sort, archived, bank, last4, wallet_alias, member_id").eq("family_id", member.family_id),
       ]);
       const list = accountChoices(accs ?? []);
       const to = list[idx];
+      const fromAcc = tx ? (accs ?? []).find((a) => a.id === tx.account_id) : null;
       if (!tx || !to) {
         await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: ru ? "Операция не найдена" : "Nu mai găsesc cheltuiala" });
+      } else if (tx.debt_id) {
+        // datorie: doar alt cont în aceeași monedă (datoria e în moneda ei)
+        if (fromAcc && to.currency !== fromAcc.currency) {
+          await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: ru ? "Нужен счёт в " + fromAcc.currency : "Alege un cont în " + fromAcc.currency, show_alert: true });
+        } else {
+          await db.from("transactions").update({ account_id: to.id }).eq("id", tx.id);
+          await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: "✓ " + to.name });
+          if (cb.message) {
+            const head = String(cb.message.text ?? "").split("\n")[0];
+            await tg(BOT_TOKEN, "editMessageText", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text: `${head}\n${ru ? "Счёт" : "Contul"}: ${to.name}`, reply_markup: accountKeyboard(tx.id, list, to.id, ru, APP_URL, to.currency) });
+          }
+        }
       } else {
         const from = (accs ?? []).find((a) => a.id === tx.account_id);
         let amount = Number(tx.amount);
@@ -372,12 +385,19 @@ Deno.serve(async (req) => {
     const dcls = classifyDebt(r.q.kind, r.q.description ?? "");
     if (dcls) {
       const { data: full } = await db.from("transactions").select("*").eq("id", r.tx.id).single();
-      const dr = full ? await convertDebt(db, full, dcls, r.account.currency).catch(() => null) : null;
+      // din numele persoanei scoatem cuvintele contului („octavian salariu” → Octavian, contul Salariu)
+      const accWords = [r.account.name, r.account.bank, r.account.last4].filter(Boolean).join(" ").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/);
+      const person = (dcls.person ?? "").split(/\s+/).filter((w: string) => !accWords.includes(w.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")) && !/^(card|cardul|contul|cont|карт\w*|счет\w*)$/i.test(w)).join(" ");
+      const dr = full ? await convertDebt(db, full, { ...dcls, person: person || dcls.person }, r.account.currency).catch(() => null) : null;
       if (dr) {
+        const all = accountChoices(allAccounts ?? []);
+        const choices = all.filter((a) => a.currency === r.account.currency);
+        const named = !!(r.q.cash || r.q.accountWord && choices.some((a) => (r.q.accountWord ?? "").includes(a.name.toLowerCase().split(" ")[0]) || (a.last4 && (r.q.accountWord ?? "").includes(a.last4))));
         await tg(BOT_TOKEN, "sendMessage", {
           chat_id: chatId,
-          text: debtLine(dr.person, dr.debt, dr.type, ru, fmt(r.q.amount)) + `\n${ru ? "Счёт" : "Contul"}: ${r.account.name}`,
-          reply_markup: { inline_keyboard: [[{ text: ru ? "Изменить" : "Modifică", web_app: { url: `${APP_URL}?tx=${r.tx.id}` } }, { text: ru ? "Отменить" : "Anulează", callback_data: `del:${r.tx.id}` }]] },
+          text: debtLine(dr.person, dr.debt, dr.type, ru, fmt(r.q.amount)) + `\n${ru ? "Счёт" : "Contul"}: ${r.account.name}` + (named || choices.length < 2 ? "" : `\n${ru ? "Другой счёт? Нажмите ниже:" : "Alt cont? Alege mai jos:"}`),
+          reply_markup: choices.length > 1 ? accountKeyboard(r.tx.id, all, r.account.id, ru, APP_URL, r.account.currency)
+            : { inline_keyboard: [[{ text: ru ? "Изменить" : "Modifică", web_app: { url: `${APP_URL}?tx=${r.tx.id}` } }, { text: ru ? "Отменить" : "Anulează", callback_data: `del:${r.tx.id}` }]] },
         });
         continue;
       }
