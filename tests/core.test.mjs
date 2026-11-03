@@ -677,3 +677,27 @@ test('datorii scrise ca cheltuială/venit: recunoaștere și persoană', async (
   const b = fs.readFileSync(new URL('../supabase/functions/_shared/debtparse.ts', import.meta.url), 'utf8')
   assert.equal(b.split('\n').slice(1).join('\n'), a)
 })
+
+test('extras MAIB PDF: antet pe două rânduri, ieșiri/intrări în moneda contului', async () => {
+  const { pdfTable } = await import('../src/lib/pdftable.js')
+  const { detectColumns, toTransactions } = await import('../src/lib/csv.js')
+  const it = (str, x, y, w = str.length * 4.4, h = 8) => ({ str, x, y, w, h, page: 1 })
+  const items = [
+    it('Data', 25, 30), it('Data', 145, 30), it('Descrierea operațiunii', 285, 36), it('Suma în valuta', 520, 30), it('Suma în valuta contului', 880, 22),
+    it('tranzacției', 25, 41), it('procesării', 145, 41), it('tranzacției', 520, 41),
+    it('ieșiri', 720, 46), it('intrări', 850, 46), it('comision', 975, 46), it('sold după', 1085, 41), it('tranzacție', 1085, 52),
+    it('Tranzacții în procesare', 25, 70), it('#Cardul', 305, 70), it('436151******4429', 400, 70),
+    it('2026-11-03', 25, 92), it('www letz md', 285, 93.5), it('-52.35', 585, 92), it('MDL', 645, 92), it('52.35', 780, 92),
+    it('2026-11-02', 25, 110), it('Netflix.com', 285, 111), it('-10.99', 585, 110), it('EUR', 645, 110), it('215.30', 775, 110), it('4.30', 1000, 110),
+    it('2026-11-01', 25, 128), it('Transfer salariu', 285, 128), it('16500.00', 575, 128), it('MDL', 645, 128), it('16500.00', 860, 128),
+  ]
+  const t = pdfTable(items)
+  assert.equal(t.mode, 'table')
+  const cols = detectColumns(t.rows)
+  const tx = toTransactions(t.rows, cols)
+  assert.deepEqual(tx.map((x) => [x.date, x.kind, x.amount, x.description]), [
+    ['2026-11-03', 'expense', 52.35, 'www letz md'],
+    ['2026-11-02', 'expense', 219.6, 'Netflix.com'], // 215,30 MDL + 4,30 comision, în moneda contului
+    ['2026-11-01', 'income', 16500, 'Transfer salariu'],
+  ])
+})

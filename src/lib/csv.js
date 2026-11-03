@@ -51,7 +51,7 @@ export function detectColumns(rows) {
       const c = find(/^(description|descriere|detalii|merchant|beneficiar|destinat|назначени|описани|explicat|comerciant|partener)/)
       return c >= 0 ? c : find(/(descr|detal|info)/)
     })()
-    const fee = find(/^(fee|comision|комисс)/)
+    const fee = find(/(^|\s)(fee|comision|комисс)/)
     const state = find(/^(state|stare|status|статус)/)
     const currency = find(/^(currency|valuta|moneda|валюта)$/)
     if (date >= 0 && (amount >= 0 || debit >= 0 || credit >= 0)) {
@@ -101,13 +101,14 @@ export function toTransactions(rows, cols) {
     const date = parseDate(row[cols.date])
     if (!date) continue
     let value = null
-    if (cols.amount >= 0) value = parseSigned(row[cols.amount])
-    if ((value === null || value === 0) && (cols.debit >= 0 || cols.credit >= 0)) {
+    // ieșiri / intrări (în moneda contului) au prioritate: „suma în valuta tranzacției” poate fi în altă monedă
+    if (cols.debit >= 0 || cols.credit >= 0) {
       const d = cols.debit >= 0 ? parseSigned(row[cols.debit]) : null
       const c = cols.credit >= 0 ? parseSigned(row[cols.credit]) : null
       if (d) value = -Math.abs(d)
       else if (c) value = Math.abs(c)
     }
+    if ((value === null || value === 0) && cols.amount >= 0) value = parseSigned(row[cols.amount])
     if (!value) continue
     const fee = cols.fee >= 0 ? Math.abs(parseSigned(row[cols.fee]) || 0) : 0
     if (value < 0) value -= fee
