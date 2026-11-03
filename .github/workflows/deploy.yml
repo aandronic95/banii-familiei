@@ -168,8 +168,11 @@ jobs:
         run: |
           # notify scrie adresa și secretul pentru pg_cron (notificări la oră fixă, fără întârzierile GitHub)
           SECRET=$(printf 'cron:%s' "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-48)
-          curl -sf -X POST "https://${PROJECT_REF}.supabase.co/functions/v1/notify?task=setup" -H "x-cron-secret: ${SECRET}" || echo "::warning::Nu am putut porni programările din baza de date; rămân cele din GitHub."
-          echo
+          OUT=$(curl -sf -X POST "https://${PROJECT_REF}.supabase.co/functions/v1/notify?task=setup" -H "x-cron-secret: ${SECRET}" || true)
+          echo "$OUT"
+          JOBS=$(echo "$OUT" | jq -r '.cron.jobs // 0' 2>/dev/null || echo 0)
+          if [ "${JOBS:-0}" -ge 6 ]; then echo "Programări active în baza de date: $JOBS"
+          else echo "::warning::Programările din baza de date nu sunt active ($JOBS); notificările vin din GitHub și pot întârzia."; fi
       - name: Configurează botul Telegram
         run: |
           API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"

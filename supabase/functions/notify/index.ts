@@ -514,7 +514,10 @@ Deno.serve(async (req) => {
   const today = todayLocal();
   // Ține la zi adresa și secretul pentru programările din baza de date (pg_cron)
   await db.from("cron_config").upsert({ id: 1, base_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1`, secret: expected, updated_at: new Date().toISOString() }).then(() => {}, () => {});
-  if (task === "setup") return new Response(JSON.stringify({ ok: true, task }), { headers: { "content-type": "application/json" } });
+  if (task === "setup") {
+    const { data: cron } = await db.rpc("cron_status");
+    return new Response(JSON.stringify({ ok: true, task, cron }), { headers: { "content-type": "application/json" } });
+  }
   // Aceeași sarcină vine și din baza de date, și din GitHub (rezervă): rulează o singură dată pe zi
   if (["daily", "weekly", "monthly"].includes(task) && !(await once(`run:${task}:${today}`))) {
     return new Response(JSON.stringify({ ok: true, task, today, skipped: "already" }), { headers: { "content-type": "application/json" } });
