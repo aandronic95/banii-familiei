@@ -5,6 +5,7 @@ import { tripTag, withTag } from "../_shared/trip.ts";
 import { normalizeSpoken, transcribe, voiceConfig } from "../_shared/voice.ts";
 import { advance, confirmRec, RT } from "../_shared/recurring.ts";
 import { addPayout, advancePay, nextDue, PT } from "../_shared/payouts.ts";
+import { classifyDebt, convertDebt, debtLine, undoDebt } from "../_shared/debts.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { accountChoices, accountKeyboard, convertAmount, parseQuick, pickAccount } from "../_shared/quick.ts";
@@ -74,7 +75,7 @@ async function saveQuick(member: { id: string; family_id: string; user_id: strin
     car_id: carId, car_kind: carKind, tags: withTag(q.tags, trip),
   }).select("id").single();
   if (error || !tx) return { error: "save" as const };
-  if (q.kind === "expense") await bigSpendAlert(db, BOT_TOKEN, APP_URL, tx.id).catch(() => 0);
+  if (q.kind === "expense" && !classifyDebt(q.kind, q.description ?? "")) await bigSpendAlert(db, BOT_TOKEN, APP_URL, tx.id).catch(() => 0);
   const cat = (cats ?? []).find((c) => c.id === categoryId);
   return { tx, q, account, cat };
 }
@@ -168,7 +169,9 @@ Deno.serve(async (req) => {
       return ok();
     }
     if (member && action === "del" && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
+      const { data: before } = await db.from("transactions").select("id, kind, amount, debt_id").eq("id", id).eq("family_id", member.family_id).maybeSingle();
       const { data: gone, error: delErr } = await db.from("transactions").delete().eq("id", id).eq("family_id", member.family_id).select("id");
+      if (!delErr && gone?.length && before?.debt_id) await undoDebt(db, before).catch((e) => console.error("datorie", e));
       if (delErr) {
         console.error("anulare", delErr);
         await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: ru ? "Не удалось отменить, удалите в приложении." : "Nu am putut anula; șterge-o din aplicație.", show_alert: true });
@@ -365,6 +368,20 @@ Deno.serve(async (req) => {
       continue;
     }
     savedAny = true;
+    // „datorie octavian 600” / „întors datorie danu 500”: la Datorii, nu la cheltuieli
+    const dcls = classifyDebt(r.q.kind, r.q.description ?? "");
+    if (dcls) {
+      const { data: full } = await db.from("transactions").select("*").eq("id", r.tx.id).single();
+      const dr = full ? await convertDebt(db, full, dcls, r.account.currency).catch(() => null) : null;
+      if (dr) {
+        await tg(BOT_TOKEN, "sendMessage", {
+          chat_id: chatId,
+          text: debtLine(dr.person, dr.debt, dr.type, ru, fmt(r.q.amount)) + `\n${ru ? "Счёт" : "Contul"}: ${r.account.name}`,
+          reply_markup: { inline_keyboard: [[{ text: ru ? "Изменить" : "Modifică", web_app: { url: `${APP_URL}?tx=${r.tx.id}` } }, { text: ru ? "Отменить" : "Anulează", callback_data: `del:${r.tx.id}` }]] },
+        });
+        continue;
+      }
+    }
     const catName = r.cat ? (ru ? r.cat.name_ru : r.cat.name_ro) : (ru ? "без категории" : "fără categorie");
     // Salvată pe contul cel mai probabil; dedesubt, toate conturile — o atingere o mută pe altul
     const choices = accountChoices(allAccounts ?? []);

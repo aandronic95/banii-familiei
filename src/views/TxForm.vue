@@ -1,7 +1,8 @@
 <script setup>
 import { reactive, ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById, completeTask, activeTrip, advanceRecurring, pendingPayouts, advancePayout, convertTo } from '../store.js'
+import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById, completeTask, activeTrip, advanceRecurring, pendingPayouts, advancePayout, convertTo, convertToDebt } from '../store.js'
+import { classifyDebt } from '../lib/debtparse.js'
 import { t, catName } from '../lib/i18n.js'
 import { parseAmount, todayISO, money, isExpression, dateShort } from '../lib/format.js'
 import { confirmDialog, haptic, qrSupported, scanQr, openLink } from '../lib/telegram.js'
@@ -307,6 +308,12 @@ async function submit() {
       const list = await saveSplit({ ...row, amount: rest.value }, [{}, ...parts.value.map((p) => ({ ...carless, category_id: p.category_id, amount: parseAmount(p.amount) }))])
       saved = list[0]
     } else saved = await save('transactions', row)
+    // „datorie octavian” / „întors datorie danu”: întrebăm dacă o trecem la Datorii (nu e cheltuială)
+    const dcls = !parts.value.length && !row.debt_id && !fromRec && !fromPayout && !saved._pending && (f.kind === 'expense' || f.kind === 'income') ? classifyDebt(f.kind, [row.merchant, row.note].filter(Boolean).join(' ')) : null
+    if (dcls && (await confirmDialog(t('txDebtQ', dcls.person || row.merchant || '—')))) {
+      const r = await convertToDebt(saved, dcls)
+      haptic('success'); toast(t('chkDebtDone_' + r.type, r.person)); router.back(); return
+    }
     if (asTemplate.value && !parts.value.length) {
       await save('templates', {
         name: tplName.value, kind: f.kind, amount: row.amount, account_id: row.account_id, category_id: row.category_id, member_id: row.member_id,

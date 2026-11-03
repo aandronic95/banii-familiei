@@ -2,7 +2,7 @@
 // Verificarea datelor: dubluri și transferuri înregistrate ca venit + cheltuială (strică rapoartele)
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, save, remove, accountById, toMdl, txCurrency, savePrefs, recurringLoanDups } from '../store.js'
+import { S, me, save, remove, accountById, toMdl, txCurrency, savePrefs, recurringLoanDups, debtLike, convertToDebt } from '../store.js'
 import { findDuplicates, findHiddenTransfers } from '../lib/checks.js'
 import { t } from '../lib/i18n.js'
 import { money, money0, dateShort } from '../lib/format.js'
@@ -24,7 +24,8 @@ const uncat = computed(() => {
   return { n: l.length, sum: l.reduce((s, x) => s + toMdl(x.amount, txCurrency(x)), 0) }
 })
 const recDups = computed(() => recurringLoanDups.value.filter((x) => !ignored.value.includes('rec:' + x.rec.id)))
-const total = computed(() => recDups.value.length + dups.value.length + transfers.value.length + (uncat.value.n ? 1 : 0))
+const debts = computed(() => debtLike.value.filter((x) => !ignored.value.includes('debt:' + x.tx.id)))
+const total = computed(() => debts.value.length + recDups.value.length + dups.value.length + transfers.value.length + (uncat.value.n ? 1 : 0))
 // Oprește plata recurentă (creditul are deja graficul lui) și șterge cheltuielile dublate adăugate de ea
 async function stopRec(x) {
   busy.value = x.rec.id
@@ -33,6 +34,10 @@ async function stopRec(x) {
     for (const e of x.extra) await remove('transactions', e.id, { silent: true })
     haptic('success'); toast(t('chkRecStopped', x.extra.length))
   } catch (e) { console.error(e); toast(t('error', e)) } finally { busy.value = '' }
+}
+async function toDebt(x) {
+  busy.value = x.tx.id
+  try { const r = await convertToDebt(x.tx, x.cls); haptic('success'); toast(t('chkDebtDone_' + r.type, r.person)) } catch (e) { console.error(e); toast(t('error', e)) } finally { busy.value = '' }
 }
 const inflated = computed(() => transfers.value.reduce((s, x) => s + toMdl(x.out.amount, txCurrency(x.out)), 0))
 const dupSum = computed(() => dups.value.reduce((s, x) => s + toMdl(x.dup.amount, txCurrency(x.dup)), 0))
@@ -81,6 +86,17 @@ async function makeTransfer(p) {
           <div class="chk__act">
             <button type="button" class="bf-btn bf-btn--primary" style="min-height: 36px;" :disabled="busy === x.rec.id" @click="stopRec(x)">{{ x.extra.length ? t('chkRecStopDel', x.extra.length) : t('chkRecStop') }}</button>
             <button type="button" class="link" style="padding: 0;" @click="ignore('rec:' + x.rec.id)">{{ t('chkRecKeep') }}</button>
+          </div>
+        </div>
+      </template>
+      <template v-if="debts.length">
+        <div class="bf-banner"><Icon name="users" /><div><b>{{ t('chkDebts', debts.length) }}</b><div class="cap">{{ t('chkDebtsWhy') }}</div></div></div>
+        <div v-for="x in debts" :key="x.tx.id" class="chk">
+          <button type="button" class="cap" style="all: unset; cursor: pointer; display: block;" @click="router.push('/tx/' + x.tx.id)"><span :class="x.tx.kind === 'income' ? 'bf-income' : 'bf-expense'">{{ x.tx.kind === 'income' ? '+' : '−' }}</span> {{ line(x.tx) }}</button>
+          <div class="cap">{{ t('chkDebtAs_' + x.cls.type, x.cls.person || '—') }}</div>
+          <div class="chk__act">
+            <button type="button" class="bf-btn bf-btn--primary" style="min-height: 36px;" :disabled="busy === x.tx.id" @click="toDebt(x)">{{ t('chkToDebt') }}</button>
+            <button type="button" class="link" style="padding: 0;" @click="ignore('debt:' + x.tx.id)">{{ t('chkNotDebt') }}</button>
           </div>
         </div>
       </template>

@@ -15,6 +15,7 @@ import { tripStats, tripOn } from './lib/trip.js'
 import { shiftWorkday } from './lib/workday.js'
 import { priceIndex } from './lib/prices.js'
 import { demoData, demoClient } from './lib/demo.js'
+import { classifyDebt, samePerson } from './lib/debtparse.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -1178,3 +1179,33 @@ export async function confirmPayout(inv, row, over = {}) {
   if (inv.maturity_date && row.date >= inv.maturity_date) await save('investments', { id: inv.id, status: 'closed' })
   return true
 }
+
+// ───────────── Datorii scrise ca cheltuială / venit ─────────────
+// O cheltuială „datorie octavian 600” devine bani dați cu împrumut (Datorii), nu cheltuială; la fel întoarcerea.
+export async function convertToDebt(tx, cls) {
+  const amount = Number(tx.amount)
+  const currency = ['MDL', 'EUR', 'USD'].includes(txCurrency(tx)) ? txCurrency(tx) : 'MDL'
+  const person = cls.person || tx.merchant || tr('debtSomeone')
+  let debt
+  if (cls.type === 'lend' || cls.type === 'borrow') {
+    debt = await save('debts', { direction: cls.direction, person, amount, paid: 0, currency, date: tx.date, member_id: tx.member_id || null, note: null, settled: false })
+  } else {
+    // întoarcere: la datoria deschisă a aceleiași persoane, altfel o datorie veche, deja închisă
+    const cand = S.debts.filter((d) => !d.settled && d.currency === currency && samePerson(d.person, person)).sort((a, b) => a.date.localeCompare(b.date))
+    let open = cand.find((d) => d.direction === cls.direction)
+    // „întors datorie danu” scris fără „+”: dacă Danu ne datora, banii au venit la noi
+    if (!open && cand.length) { open = cand[0]; cls = { ...cls, direction: open.direction, type: open.direction === 'owed_to_us' ? 'repaid' : 'repay' } }
+    if (open) {
+      const paid = Math.round((Number(open.paid) + amount) * 100) / 100
+      debt = await save('debts', { id: open.id, paid: Math.min(paid, Number(open.amount)), settled: paid >= Number(open.amount) - 0.005 })
+    } else {
+      debt = await save('debts', { direction: cls.direction, person, amount, paid: amount, currency, date: tx.date, member_id: tx.member_id || null, note: tr('debtOldNote'), settled: true })
+    }
+  }
+  const out = cls.type === 'lend' || cls.type === 'repay' // banii ies din cont
+  await save('transactions', { id: tx.id, kind: out ? 'invest' : 'divest', category_id: null, debt_id: debt.id, merchant: person, for_member_id: null })
+  return { debt, person, type: cls.type }
+}
+// Cheltuieli/venituri care par datorii (pentru verificarea datelor)
+export const debtLike = computed(() => S.transactions.filter((x) => (x.kind === 'expense' || x.kind === 'income') && !x.debt_id && !x.loan_id && !x.investment_id && !x._pending)
+  .map((x) => ({ tx: x, cls: classifyDebt(x.kind, [x.merchant, x.note].filter(Boolean).join(' ')) })).filter((x) => x.cls))
