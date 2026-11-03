@@ -4,6 +4,7 @@ import { bigSpendAlert } from "../_shared/alert.ts";
 import { tripTag, withTag } from "../_shared/trip.ts";
 import { normalizeSpoken, transcribe, voiceConfig } from "../_shared/voice.ts";
 import { advance, confirmRec, RT } from "../_shared/recurring.ts";
+import { addPayout, advancePay, nextDue, PT } from "../_shared/payouts.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { accountChoices, accountKeyboard, convertAmount, parseQuick, pickAccount } from "../_shared/quick.ts";
@@ -116,6 +117,31 @@ Deno.serve(async (req) => {
     const member = await memberByTelegram(cb.from.id);
     const ru = member?.lang === "ru";
     const [action, id] = String(cb.data).split(":");
+    // ── Dobândă / rată de la o investiție: pok (da) / pno (încă nu) / psk (sari) ──
+    if (member && ["pok", "pno", "psk"].includes(action) && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
+      const date = String(cb.data).split(":")[2] ?? "";
+      const lg = ru ? "ru" : "ro";
+      const { data: inv } = await db.from("investments").select("*").eq("id", id).eq("family_id", member.family_id).maybeSingle();
+      const row = inv ? nextDue(inv, "9999-12-31") : null;
+      const edit = (text: string) => cb.message ? tg(BOT_TOKEN, "editMessageText", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, text }) : null;
+      if (!inv || !row || row.date !== date) {
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: PT[lg].done });
+        if (cb.message) await tg(BOT_TOKEN, "editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } });
+      } else if (action === "pno") {
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: PT[lg].asked });
+        await edit((cb.message?.text ?? "") + "\n⏳ " + PT[lg].asked);
+      } else if (action === "psk") {
+        await advancePay(db, inv, date);
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: "⏭" });
+        await edit(PT[lg].skipped(inv.name));
+      } else {
+        const { data: acc } = await db.from("accounts").select("id, name, currency").eq("id", inv.payout_account_id).eq("family_id", member.family_id).maybeSingle();
+        const res = acc ? await addPayout(db, inv, row, acc, await latestRates(), todayLocal(), lg) : null;
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: res ? "✅" : PT[lg].done });
+        if (res) await edit(PT[lg].added(inv.name, fmt(res.total), acc!.currency, acc!.name));
+      }
+      return ok();
+    }
     // ── Plată regulată cu confirmare: rok (da) / rno (încă nu) / rsk (sari) ──
     if (member && ["rok", "rno", "rsk"].includes(action) && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
       const from = String(cb.data).split(":")[2] ?? "";

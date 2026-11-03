@@ -6,7 +6,8 @@ import { loanForRecurring, nextOccurrence, nextUnpaid } from "../_shared/loan.ts
 import { ratesFor } from "../_shared/bnm.ts";
 import { weeklyText, type WeekTx } from "../_shared/weekly.ts";
 import { advance, askKeyboard, dueDate, RT } from "../_shared/recurring.ts";
-import { accruedInterest, couponDates } from "../_shared/invest.ts";
+import { addPayout, convert, payKeyboard, PT } from "../_shared/payouts.ts";
+import { accruedInterest, couponDates, duePayouts } from "../_shared/invest.ts";
 import { nextEventDate, turning } from "../_shared/home.ts";
 import { nowLocalHM, taskButtons, taskLine, T as TT } from "../_shared/tasks.ts";
 
@@ -23,6 +24,7 @@ function todayLocal(): string {
 function daysBetween(a: string, b: string): number {
   return Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
 }
+const fmt2 = (n: number) => n.toFixed(2).replace(".", ",");
 const fmt = (n: number) =>
   new Intl.NumberFormat("ro-RO", { maximumFractionDigits: 0 }).format(Math.round(n)).replace(/\./g, " ");
 
@@ -125,7 +127,7 @@ async function daily(today: string) {
     // Plăți recurente: se adaugă în ziua lor (recuperează și zilele ratate), anunț cu o zi înainte
     const { data: recs } = await db.from("recurring").select("*").eq("family_id", f.id).eq("active", true);
     const tomorrow = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10);
-    const { data: famAccs } = await db.from("accounts").select("id, currency, type, archived").eq("family_id", f.id);
+    const { data: famAccs } = await db.from("accounts").select("id, name, currency, type, archived").eq("family_id", f.id);
     const firstAcc = (famAccs ?? []).find((a) => !a.archived && a.type === "card") ?? (famAccs ?? []).find((a) => !a.archived && a.type !== "asset");
     const { data: openLoans } = await db.from("loans").select("*").eq("family_id", f.id).eq("closed", false);
     for (const r of recs ?? []) {
@@ -164,6 +166,35 @@ async function daily(today: string) {
       // doar memento: trecem la următoarea dată după ziua plății
       while (!r.auto_add && dueDate(r, next) < today && guard++ < 6) next = nextOccurrence(next, r.every_months, r.day_of_month);
       if (next !== r.next_date) await db.from("recurring").update({ next_date: next }).eq("id", r.id);
+    }
+
+    // Dobânzi / rate de la investiții pe contul ales (automat sau după „Da, au venit”)
+    const { data: payInv } = await db.from("investments").select("*").eq("family_id", f.id).neq("status", "closed").not("payout_account_id", "is", null);
+    for (const inv of payInv ?? []) {
+      const acc = (famAccs ?? []).find((a) => a.id === inv.payout_account_id && !a.archived);
+      if (!acc) continue;
+      const due = duePayouts(inv, today);
+      if (!due.length) continue;
+      if (inv.payout_mode === "auto") {
+        let cur = inv;
+        for (const row of due.slice(0, 6)) {
+          const r = await addPayout(db, cur, row, acc, rates, row.date);
+          if (!r) break;
+          cur = { ...cur, paid_through: row.date };
+          await send(members, "invest", (lg) => PT[lg].added(inv.name, fmt2(r.total), acc.currency, acc.name ?? ""));
+        }
+        continue;
+      }
+      const row = due[0];
+      const late = daysBetween(row.date, today);
+      if (late <= 14 && (await once(`payq:${inv.id}:${row.date}:${today}`))) {
+        const total = convert(Number(row.interest) + Number(row.principal), inv.currency, acc.currency, rates);
+        for (const m of members) {
+          if (m.notify?.invest === false) continue;
+          const lg = m.lang === "ru" ? "ru" : "ro";
+          await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id, text: PT[lg].ask(inv.name, fmt2(total), acc.currency, acc.name ?? "", row.date.split("-").reverse().join("."), late), reply_markup: payKeyboard(inv, row.date, lg, APP_URL) });
+        }
+      }
     }
 
     // Datorii personale: memento în ziua termenului

@@ -637,3 +637,27 @@ test('P2P (Fagura): rată lunară egală, suma nerambursată ca pe platformă', 
   assert.equal(at('2026-07-20').remaining, 25)
   assert.equal(at('2029-08-01').remaining <= 0.05, true)
 })
+
+test('plățile investițiilor: cupoane, rate P2P, ce e de adăugat', async () => {
+  const { payoutSchedule, duePayouts, lastPayoutBefore } = await import('../src/lib/invest.js')
+  const p2p = { kind: 'p2p', amount: 25, rate: 21.9, start_date: '2026-07-13', maturity_date: '2029-07-13' }
+  const rows = payoutSchedule(p2p)
+  assert.equal(rows.length, 36)
+  assert.deepEqual(rows[0], { date: '2026-08-13', interest: 0.46, principal: 0.49, balance: 24.51 })
+  assert.equal(Math.round(rows.reduce((s, r) => s + r.principal, 0) * 100) / 100, 25)
+  assert.equal(lastPayoutBefore(p2p, '2026-11-03'), '2026-10-13')
+  assert.deepEqual(duePayouts({ ...p2p, paid_through: '2026-10-13' }, '2026-11-13').map((r) => r.date), ['2026-11-13'])
+  assert.deepEqual(duePayouts({ ...p2p, paid_through: '2026-10-13' }, '2026-11-12'), [])
+  const bond = { kind: 'gov_bond', amount: 2000, rate: 7.45, start_date: '2026-10-18', maturity_date: '2027-10-06', coupon_freq: 'semiannual' }
+  assert.deepEqual(payoutSchedule(bond).map((r) => [r.date, r.principal]), [['2027-04-18', 0], ['2027-10-06', 2000]])
+  const tbill = { kind: 'tbill', amount: 10000, rate: 6.9, start_date: '2026-09-23', maturity_date: '2027-03-24', coupon_freq: 'maturity' }
+  assert.deepEqual(payoutSchedule(tbill).map((r) => [r.date, r.interest, r.principal]), [['2027-03-24', 344.05, 10000]])
+  assert.deepEqual(payoutSchedule({ kind: 'stocks', amount: 5, rate: 3, start_date: '2026-01-01' }), [])
+})
+
+test('invest.ts e copia exactă a invest.js', async () => {
+  const fs = await import('node:fs')
+  const a = fs.readFileSync(new URL('../src/lib/invest.js', import.meta.url), 'utf8')
+  const b = fs.readFileSync(new URL('../supabase/functions/_shared/invest.ts', import.meta.url), 'utf8')
+  assert.equal(b.split('\n').slice(1).join('\n'), a)
+})

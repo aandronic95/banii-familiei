@@ -1,10 +1,10 @@
 <script setup>
 import { reactive, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, me, save, remove, activeAccounts, balances, investStatus } from '../store.js'
+import { S, me, save, remove, activeAccounts, balances, investStatus, convertTo, accountById } from '../store.js'
 import { t } from '../lib/i18n.js'
 import { parseAmount, todayISO, money, dateLong } from '../lib/format.js'
-import { accruedInterest } from '../lib/invest.js'
+import { accruedInterest, payoutSchedule, lastPayoutBefore } from '../lib/invest.js'
 import { confirmDialog, haptic } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
@@ -34,6 +34,18 @@ const f = reactive({
   member_id: orig?.member_id ?? me.value?.id ?? '',
   account_id: orig?.account_id ?? '',
   note: orig?.note ?? '',
+  payout_account_id: orig?.payout_account_id ?? '',
+  payout_mode: orig?.payout_mode ?? 'confirm',
+})
+// Prima plată (dobândă / rată) care se va adăuga pe contul ales: cele de până azi nu se mai adaugă
+const nextPayout = computed(() => {
+  const amount = parseAmount(f.amount)
+  if (!(amount > 0) || !f.payout_account_id) return null
+  const inv = { kind: f.kind, amount, rate: parseAmount(f.rate) || null, start_date: f.start_date, maturity_date: f.maturity_date || null, coupon_freq: hasCoupon.value ? f.coupon_freq : 'maturity' }
+  const after = orig?.payout_account_id && orig.paid_through ? orig.paid_through : todayISO()
+  const p = payoutSchedule(inv).find((x) => x.date > after)
+  const acc = accountById(f.payout_account_id)
+  return p && acc ? { date: p.date, amount: convertTo(p.interest + p.principal, f.currency, acc.currency), cur: acc.currency } : null
 })
 // Plata dobânzii se alege doar pentru obligațiuni / bonuri / alte depozite cu dobândă
 const hasCoupon = computed(() => ['gov_bond', 'tbill', 'other'].includes(f.kind))
@@ -78,6 +90,9 @@ async function submit() {
       coupon_freq: hasCoupon.value ? f.coupon_freq : 'maturity',
       current_value: f.current_value === '' ? null : parseAmount(f.current_value), value_date: f.current_value === '' ? null : todayISO(),
       status: f.status, member_id: f.member_id || null, account_id: f.account_id || pay.value || null, note: f.note.trim() || null,
+      payout_account_id: f.payout_account_id || null, payout_mode: f.payout_mode,
+      // contul ales acum: plățile de până azi nu se mai adaugă (sunt deja în sold, dacă au venit)
+      ...(f.payout_account_id && !orig?.payout_account_id ? { paid_through: lastPayoutBefore({ kind: f.kind, amount, rate: f.rate === '' ? null : parseAmount(f.rate), start_date: f.start_date || todayISO(), maturity_date: f.maturity_date || null, coupon_freq: hasCoupon.value ? f.coupon_freq : 'maturity' }, todayISO()) } : {}),
     })
     if (isNew && pay.value) {
       await save('transactions', {
@@ -212,6 +227,22 @@ async function del() {
         <option v-for="a in payAccounts" :key="a.id" :value="a.id">{{ accLabel(a) }}</option>
       </select>
       <span class="hint">{{ t('paidFromHint') }}</span>
+    </div>
+
+    <div v-if="['gov_bond', 'tbill', 'other', 'p2p'].includes(f.kind)" class="fld">
+      <label for="i-po">{{ t('payoutAcc') }}</label>
+      <select id="i-po" v-model="f.payout_account_id" class="inp">
+        <option value="">{{ t('payoutNone') }}</option>
+        <option v-for="a in activeAccounts" :key="a.id" :value="a.id">{{ accLabel(a) }}</option>
+      </select>
+      <template v-if="f.payout_account_id">
+        <div class="seg" style="grid-template-columns: repeat(2, minmax(0, 1fr));">
+          <button type="button" :class="{ on: f.payout_mode === 'confirm' }" @click="f.payout_mode = 'confirm'">{{ t('recMode_confirm') }}</button>
+          <button type="button" :class="{ on: f.payout_mode === 'auto' }" @click="f.payout_mode = 'auto'">{{ t('recMode_auto') }}</button>
+        </div>
+        <span class="hint">{{ (f.payout_mode === 'confirm' ? t('payoutHintConfirm') : t('payoutHintAuto')) + (nextPayout ? ' ' + t('payoutFirst', dateLong(nextPayout.date), money(nextPayout.amount), nextPayout.cur) : '') }}</span>
+      </template>
+      <span v-else class="hint">{{ t('payoutNoneHint') }}</span>
     </div>
 
     <div class="fld"><label for="i-note">{{ t('note') }}</label><input id="i-note" v-model="f.note" class="inp" :placeholder="t('optional')" maxlength="200"></div>

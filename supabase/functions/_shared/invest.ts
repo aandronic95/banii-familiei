@@ -62,3 +62,75 @@ export function couponInfo(amount, ratePct, start, maturity, freq, today) {
   const paidTotal = Math.round(dates.filter((d) => d <= today).reduce((s, d, i, arr) => s + accruedInterest(amount, ratePct, i ? arr[i - 1] : start, d), 0) * 100) / 100
   return { last, next, nextAmount, paid, count: maturity ? dates.length : null, paidTotal, dates }
 }
+
+// ── Împrumuturi P2P (Fagura): rată lunară egală (dobândă + o parte din sumă), ca un credit, dar invers ──
+// Prima plată la o lună după investiție. Valoarea de acum = suma încă nerambursată + dobânda de la ultima plată.
+const monthsBetween = (a, b) => {
+  const [y1, m1, d1] = a.split('-').map(Number), [y2, m2, d2] = b.split('-').map(Number)
+  return (y2 - y1) * 12 + (m2 - m1) - (d2 < d1 ? 1 : 0)
+}
+// Graficul complet al ratelor: [{ date, interest, principal, balance }]
+export function annuityRows(amount, ratePct, start, maturity) {
+  const P = Number(amount) || 0
+  if (!P || !ratePct || !start || !maturity) return []
+  const n = monthsBetween(start, maturity)
+  if (n < 1) return []
+  const r = Number(ratePct) / 1200
+  const pmt = Math.round((r ? (P * r) / (1 - Math.pow(1 + r, -n)) : P / n) * 100) / 100
+  const out = []
+  let bal = P, given = 0
+  for (let k = 1; k <= n; k++) {
+    const interest = bal * r
+    const principal = k === n ? bal : Math.min(bal, pmt - interest)
+    bal -= principal
+    // în cenți; ultima rată ia restul, ca suma întoarsă să fie exact cât s-a investit
+    const pr = k === n ? Math.round((P - given) * 100) / 100 : Math.round(principal * 100) / 100
+    given += pr
+    out.push({ date: addMonthsISO(start, k), interest: Math.round(interest * 100) / 100, principal: pr, balance: Math.round(bal * 100) / 100 })
+  }
+  return out
+}
+
+// Toate plățile pe care le face o investiție: dobânzi (cupoane / rate) și suma înapoi, cu data lor
+export function payoutSchedule(inv) {
+  const amount = Number(inv.amount) || 0
+  if (!amount || !inv.rate || !inv.start_date) return []
+  if (inv.kind === 'p2p') return annuityRows(amount, inv.rate, inv.start_date, inv.maturity_date)
+  if (!['gov_bond', 'tbill', 'other'].includes(inv.kind)) return []
+  const freq = inv.coupon_freq || 'maturity'
+  if (freq === 'maturity' || !FREQ_MONTHS[freq]) {
+    return inv.maturity_date ? [{ date: inv.maturity_date, interest: accruedInterest(amount, inv.rate, inv.start_date, inv.maturity_date), principal: amount }] : []
+  }
+  const horizon = addMonthsISO(inv.start_date, 12 * 30)
+  const dates = couponDates(inv.start_date, inv.maturity_date, freq, horizon)
+  return dates.map((d, i) => ({ date: d, interest: accruedInterest(amount, inv.rate, i ? dates[i - 1] : inv.start_date, d), principal: d === inv.maturity_date ? amount : 0 }))
+}
+// Plățile venite până azi și încă neadăugate (după `paid_through`)
+export const duePayouts = (inv, today) => payoutSchedule(inv).filter((p) => p.date <= today && (!inv.paid_through || p.date > inv.paid_through))
+// Ultima plată de până azi: de aici încep plățile adăugate automat când se alege contul
+export const lastPayoutBefore = (inv, today) => payoutSchedule(inv).filter((p) => p.date <= today).pop()?.date || null
+
+export function annuityInfo(amount, ratePct, start, maturity, today) {
+  const P = Number(amount) || 0
+  if (!P || !ratePct || !start || !maturity) return null
+  const n = monthsBetween(start, maturity)
+  if (n < 1) return null
+  const r = Number(ratePct) / 1200
+  // rata rotunjită la cenți, cum o afișează platforma (0,95 €), și din ea se socotește cât din sumă s-a întors
+  const pmt = Math.round((r ? (P * r) / (1 - Math.pow(1 + r, -n)) : P / n) * 100) / 100
+  let bal = P, paid = 0, received = 0, interestPaid = 0, last = start
+  for (let k = 1; k <= n; k++) {
+    const due = addMonthsISO(start, k)
+    if (due > today) break
+    const interest = bal * r
+    const principal = k === n ? bal : Math.min(bal, pmt - interest) // ultima rată închide restul
+    bal -= principal; received += principal + interest; interestPaid += interest; paid = k; last = due
+  }
+  const r2 = (x) => Math.round(x * 100) / 100
+  const next = paid < n ? addMonthsISO(start, paid + 1) : null
+  const accrued = paid < n ? accruedInterest(bal, ratePct, last, today) : 0
+  return {
+    pmt: r2(pmt), n, paid, remaining: r2(bal), received: r2(received), interestPaid: r2(interestPaid),
+    last, next, nextAmount: next ? r2(pmt) : 0, accrued, totalInterest: r2(pmt * n - P),
+  }
+}

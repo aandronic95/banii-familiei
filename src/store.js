@@ -6,7 +6,7 @@ import { todayISO, uuid } from './lib/format.js'
 import { cacheGet, cacheSet, cacheDel } from './lib/cache.js'
 import { toast } from './components/Toast.js'
 import { t as tr } from './lib/i18n.js'
-import { accruedInterest, liveAccrued, perDay, assetValue, couponInfo, annuityInfo } from './lib/invest.js'
+import { accruedInterest, liveAccrued, perDay, assetValue, couponInfo, annuityInfo, duePayouts } from './lib/invest.js'
 import { detectSubscriptions, suggestBudget } from './lib/insights.js'
 import { schedule } from './lib/loan.js'
 import { nextDue, parseShopping } from './lib/taskparse.js'
@@ -1137,3 +1137,44 @@ export function goalProgress(g) {
 
 // Istoricul prețurilor din bonurile cu produse
 export const prices = computed(() => priceIndex(S.transactions.filter((x) => x.kind === 'expense' && Array.isArray(x.items) && x.items.length)))
+
+// ───────────── Dobânzi și rate de la investiții, pe contul ales ─────────────
+// Suma în moneda contului (investiția poate fi în EUR, iar contul în MDL)
+export const convertTo = (amount, from, to) => (from === to ? Number(amount) : Math.round((toMdl(amount, from) / (S.rates[to] ?? 1)) * 100) / 100)
+export const pendingPayouts = computed(() => {
+  const today = todayISO()
+  const out = []
+  for (const inv of S.investments) {
+    if (inv.status === 'closed' || !inv.payout_account_id || inv.payout_mode === 'auto' || !accountById(inv.payout_account_id)) continue
+    const due = duePayouts(inv, today)
+    if (due.length) out.push({ inv, row: due[0], more: due.length - 1, acc: accountById(inv.payout_account_id) })
+  }
+  return out.sort((a, b) => a.row.date.localeCompare(b.row.date))
+})
+// Marchează plata ca adăugată doar dacă n-a făcut-o deja altcineva (botul sau alt telefon)
+export async function advancePayout(inv, date) {
+  const from = inv.paid_through || null
+  if (!S.demo && !S.offline && navigator.onLine !== false) {
+    let q = supabase.from('investments').update({ paid_through: date }).eq('id', inv.id)
+    q = from ? q.eq('paid_through', from) : q.is('paid_through', null)
+    const { data, error } = await q.select()
+    if (error) throw error
+    if (!data?.length) { toast(tr('recAlready')); await loadAll().catch(() => {}); return false }
+    putLocal('investments', data[0])
+    return true
+  }
+  await save('investments', { id: inv.id, paid_through: date })
+  return true
+}
+// Adaugă dobânda (venit) și, dacă e cazul, suma întoarsă (retragere din investiție) pe contul ales
+export async function confirmPayout(inv, row, over = {}) {
+  const acc = accountById(over.account_id || inv.payout_account_id)
+  if (!acc || !(await advancePayout(inv, row.date))) return null
+  const base = { account_id: acc.id, member_id: inv.member_id || me.value?.id || null, date: over.date || todayISO(), merchant: [inv.platform, inv.name].filter(Boolean).join(' · '), investment_id: inv.id }
+  const interest = over.interest ?? convertTo(row.interest, inv.currency, acc.currency)
+  const cat = S.categories.find((c) => c.kind === 'income' && c.icon === 'percent' && !c.archived)
+  if (interest > 0) await save('transactions', { ...base, kind: 'income', amount: interest, category_id: cat?.id || null, note: tr('payInterestNote') })
+  if (row.principal > 0) await save('transactions', { ...base, kind: 'divest', amount: convertTo(row.principal, inv.currency, acc.currency), note: tr('payPrincipalNote') })
+  if (inv.maturity_date && row.date >= inv.maturity_date) await save('investments', { id: inv.id, status: 'closed' })
+  return true
+}

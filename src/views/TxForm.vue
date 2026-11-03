@@ -1,7 +1,7 @@
 <script setup>
 import { reactive, ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById, completeTask, activeTrip, advanceRecurring } from '../store.js'
+import { S, me, save, remove, accountById, activeAccounts, balances, uploadReceipt, receiptUrl, saveSplit, splitSiblings, normTag, tagStats, categoryById, completeTask, activeTrip, advanceRecurring, pendingPayouts, advancePayout, convertTo } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { parseAmount, todayISO, money, isExpression, dateShort } from '../lib/format.js'
 import { confirmDialog, haptic, qrSupported, scanQr, openLink } from '../lib/telegram.js'
@@ -51,6 +51,14 @@ const fromRec = !orig && route.query.rec ? S.recurring.find((r) => r.id === rout
 if (fromRec) {
   Object.assign(f, { kind: fromRec.kind, amount: String(fromRec.amount).replace('.', ','), category_id: fromRec.category_id || '', merchant: fromRec.name, member_id: fromRec.member_id || f.member_id })
   if (accountById(fromRec.account_id)) f.account_id = fromRec.account_id
+}
+
+// Din „Altă sumă” la o dobândă de investiție: venitul e dobânda; suma întoarsă se adaugă separat, la salvare
+const fromPayout = !orig && route.query.payout ? pendingPayouts.value.find((p) => p.inv.id === route.query.payout) : null
+if (fromPayout) {
+  const pc = S.categories.find((c) => c.kind === 'income' && c.icon === 'percent' && !c.archived)
+  Object.assign(f, { kind: 'income', amount: String(convertTo(fromPayout.row.interest, fromPayout.inv.currency, fromPayout.acc.currency)).replace('.', ','), account_id: fromPayout.acc.id,
+    category_id: pc?.id || '', merchant: [fromPayout.inv.platform, fromPayout.inv.name].filter(Boolean).join(' · '), investment_id: fromPayout.inv.id })
 }
 
 // Pentru cine: implicit din categorie, până când omul alege singur
@@ -273,6 +281,14 @@ async function submit() {
       fiscal_ref: f.kind === 'transfer' ? null : f.fiscal_ref,
       items: f.kind === 'transfer' || !f.items.length ? null : f.items,
       for_member_id: f.kind === 'expense' && !isInvestMove ? f.for_member_id || null : null,
+    }
+    if (fromPayout) {
+      if (!(await advancePayout(fromPayout.inv, fromPayout.row.date))) { err.value = t('recAlready'); return }
+      if (fromPayout.row.principal > 0) {
+        await save('transactions', { kind: 'divest', amount: convertTo(fromPayout.row.principal, fromPayout.inv.currency, fromPayout.acc.currency), account_id: fromPayout.acc.id,
+          member_id: row.member_id, date: row.date, merchant: row.merchant, investment_id: fromPayout.inv.id, note: t('payPrincipalNote') })
+      }
+      if (fromPayout.inv.maturity_date && fromPayout.row.date >= fromPayout.inv.maturity_date) await save('investments', { id: fromPayout.inv.id, status: 'closed' })
     }
     if (fromRec) {
       // trece plata regulată la data următoare; dacă a confirmat-o deja altcineva, nu dublăm

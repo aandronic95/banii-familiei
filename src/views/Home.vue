@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, isOwner, savePrefs, todayTasks, shoppingLeft, completeTask, reopenTask, memberById, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary, pendingRecurring, confirmRecurring, advanceRecurring, recDue } from '../store.js'
+import { S, me, isOwner, savePrefs, todayTasks, shoppingLeft, completeTask, reopenTask, memberById, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary, pendingRecurring, confirmRecurring, advanceRecurring, recDue, pendingPayouts, confirmPayout, advancePayout, convertTo } from '../store.js'
 import { t, catName } from '../lib/i18n.js'
 import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
@@ -127,6 +127,14 @@ async function recSkip(r) {
   recBusy.value = r.id
   try { await advanceRecurring(r) } catch (e) { toast(t('error', e)) } finally { recBusy.value = null }
 }
+async function payYes(p) {
+  recBusy.value = p.inv.id
+  try { if (await confirmPayout(p.inv, p.row)) haptic('success') } catch (e) { toast(t('error', e)) } finally { recBusy.value = null }
+}
+async function paySkip(p) {
+  recBusy.value = p.inv.id
+  try { await advancePayout(p.inv, p.row.date) } catch (e) { toast(t('error', e)) } finally { recBusy.value = null }
+}
 </script>
 
 <template>
@@ -160,7 +168,7 @@ async function recSkip(r) {
       </div>
     </button>
 
-    <section v-if="pendingRecurring.length" class="bf-card stack" aria-labelledby="recq-h">
+    <section v-if="pendingRecurring.length || pendingPayouts.length" class="bf-card stack" aria-labelledby="recq-h">
       <h2 id="recq-h" class="h-sec">{{ t('recConfirmTitle') }}</h2>
       <div v-for="r in pendingRecurring" :key="r.id" class="stack" style="gap: 8px;">
         <div class="kv" style="align-items: baseline;">
@@ -171,6 +179,18 @@ async function recSkip(r) {
           <button type="button" class="bf-btn bf-btn--primary" style="min-height: 38px; flex: 1;" :disabled="recBusy === r.id" @click="recYes(r)">{{ r.kind === 'income' ? t('recCame') : t('recPaid') }}</button>
           <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 38px;" @click="router.push({ path: '/tx/new', query: { rec: r.id } })">{{ t('recOther') }}</button>
           <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 38px;" :disabled="recBusy === r.id" @click="recSkip(r)">{{ t('recSkip') }}</button>
+        </div>
+      </div>
+      <div v-for="p in pendingPayouts" :key="p.inv.id + p.row.date" class="stack" style="gap: 8px;">
+        <div class="kv" style="align-items: baseline;">
+          <span><b>{{ p.inv.name }}</b> <span class="cap">· {{ dateShort(p.row.date) }} · {{ p.acc.name }}</span></span>
+          <b class="bf-income" style="white-space: nowrap;">+{{ money(convertTo(p.row.interest + p.row.principal, p.inv.currency, p.acc.currency)) }} {{ p.acc.currency }}</b>
+        </div>
+        <div v-if="p.row.principal > 0" class="cap">{{ t('payBreakdown', money(convertTo(p.row.interest, p.inv.currency, p.acc.currency)), money(convertTo(p.row.principal, p.inv.currency, p.acc.currency))) }}</div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="bf-btn bf-btn--primary" style="min-height: 38px; flex: 1;" :disabled="recBusy === p.inv.id" @click="payYes(p)">{{ t('recCame') }}</button>
+          <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 38px;" @click="router.push({ path: '/tx/new', query: { payout: p.inv.id } })">{{ t('recOther') }}</button>
+          <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 38px;" :disabled="recBusy === p.inv.id" @click="paySkip(p)">{{ t('recSkip') }}</button>
         </div>
       </div>
       <p class="hint" style="margin: 0;">{{ t('recConfirmHint') }}</p>
