@@ -164,6 +164,12 @@ jobs:
           fi
       - name: Publică funcțiile
         run: supabase functions deploy --project-ref "$PROJECT_REF"
+      - name: Pornește programările din baza de date
+        run: |
+          # notify scrie adresa și secretul pentru pg_cron (notificări la oră fixă, fără întârzierile GitHub)
+          SECRET=$(printf 'cron:%s' "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-48)
+          curl -sf -X POST "https://${PROJECT_REF}.supabase.co/functions/v1/notify?task=setup" -H "x-cron-secret: ${SECRET}" || echo "::warning::Nu am putut porni programările din baza de date; rămân cele din GitHub."
+          echo
       - name: Configurează botul Telegram
         run: |
           API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"

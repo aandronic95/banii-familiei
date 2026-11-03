@@ -5,7 +5,9 @@ on:
     - cron: '0 6 * * *'    # zilnic, ~09:00 la Chișinău: scadențe, bugete, plăți recurente, curs BNM
     - cron: '0 16 * * 0'   # duminică seara: rezumatul săptămânii + backup Excel (cui l-a cerut)
     - cron: '30 6 1 * *'   # pe 1 a lunii: raportul PDF pentru luna trecută
-    - cron: '0 18 * * *'   # seara, ~21:00 la Chișinău: rezumatul zilei
+    # Orele de mai sus sunt rezervă: notificările pornesc la oră fixă din baza de date (pg_cron).
+    # GitHub poate întârzia programările ore întregi; funcția trimite fiecare lucru o singură dată.
+    - cron: '37 19 * * *'  # rezervă pentru rezumatul de seară (21:37 iarna, 22:37 vara); după 23:59 nu se mai trimite
     - cron: '*/15 5-21 * * *' # la fiecare 15 minute, ziua: mementourile sarcinilor cu oră
   workflow_dispatch:
     inputs:
@@ -27,7 +29,7 @@ jobs:
             case "${{ github.event.schedule }}" in
               "0 16 * * 0") TASK=weekly ;;
               "30 6 1 * *") TASK=monthly ;;
-              "0 18 * * *") TASK=evening ;;
+              "37 19 * * *") TASK=evening ;;
               "*/15 5-21 * * *") TASK=remind ;;
               *) TASK=daily ;;
             esac

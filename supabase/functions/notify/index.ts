@@ -329,7 +329,11 @@ async function fxAlerts(today: string) {
 }
 
 // Seara: cât s-a cheltuit azi și cât mai rămâne din bugetul lunii
+// Rezumatul de seară vine doar între 20:30 și 23:59 ora Chișinăului; mai târziu ar fi despre ziua greșită
+export const eveningWindow = (hm: string) => hm >= "20:30" && hm <= "23:59";
+
 async function evening(today: string) {
+  if (!eveningWindow(nowLocalHM())) return;
   const rates = await latestRates();
   const toMdl = (a: number, cur: string) => a * (rates[cur] ?? 1);
   const month = today.slice(0, 7);
@@ -508,6 +512,13 @@ Deno.serve(async (req) => {
   if (req.headers.get("x-cron-secret") !== expected) return new Response("forbidden", { status: 403 });
   const task = new URL(req.url).searchParams.get("task") ?? "daily";
   const today = todayLocal();
+  // Ține la zi adresa și secretul pentru programările din baza de date (pg_cron)
+  await db.from("cron_config").upsert({ id: 1, base_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1`, secret: expected, updated_at: new Date().toISOString() }).then(() => {}, () => {});
+  if (task === "setup") return new Response(JSON.stringify({ ok: true, task }), { headers: { "content-type": "application/json" } });
+  // Aceeași sarcină vine și din baza de date, și din GitHub (rezervă): rulează o singură dată pe zi
+  if (["daily", "weekly", "monthly"].includes(task) && !(await once(`run:${task}:${today}`))) {
+    return new Response(JSON.stringify({ ok: true, task, today, skipped: "already" }), { headers: { "content-type": "application/json" } });
+  }
   if (task === "weekly") await weekly(today);
   else if (task === "monthly") await monthly(today);
   else if (task === "evening") await evening(today);

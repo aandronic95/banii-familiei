@@ -86,6 +86,9 @@ Deno.serve(async (req) => {
     const { data: fams } = await db.from("families").select("id");
     let sent = 0;
     for (const fam of fams ?? []) {
+      // rulează și din baza de date, și din GitHub (rezervă): o singură trimitere pe zi
+      const { error: dupErr } = await db.from("notify_log").insert({ key: `docs:${type}:${fam.id}:${today}` });
+      if (dupErr) continue;
       const { data: mem } = await db.from("members").select("telegram_id, lang, notify").eq("family_id", fam.id).in("role", ["owner", "editor"]).not("telegram_id", "is", null);
       const want = (mem ?? []).filter((x: any) => type === "report" ? x.notify?.monthly !== false : x.notify?.backup === true);
       if (!want.length) continue;
