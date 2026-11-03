@@ -285,10 +285,12 @@ function subscribe() {
   const fid = S.family.id
   channel = supabase.channel('family-' + fid)
   for (const [table, key] of Object.entries(TABLES)) {
-    channel.on('postgres_changes', { event: '*', schema: 'public', table, filter: `family_id=eq.${fid}` }, (p) => {
-      if (p.eventType === 'DELETE') removeLocal(key, p.old.id)
-      else putLocal(key, p.new)
-    })
+    for (const event of ['INSERT', 'UPDATE']) {
+      channel.on('postgres_changes', { event, schema: 'public', table, filter: `family_id=eq.${fid}` }, (p) => putLocal(key, p.new))
+    }
+    // Ștergerile nu se pot filtra pe familie în Supabase Realtime (vine doar ID-ul): le ascultăm nefiltrat;
+    // un ID care nu e la noi e ignorat. Așa dispare din aplicație și ce s-a anulat din bot sau de pe alt telefon.
+    channel.on('postgres_changes', { event: 'DELETE', schema: 'public', table }, (p) => { if (p.old?.id) removeLocal(key, p.old.id) })
   }
   channel.subscribe()
 }

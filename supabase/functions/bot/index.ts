@@ -142,7 +142,12 @@ Deno.serve(async (req) => {
       return ok();
     }
     if (member && action === "del" && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
-      const { data: gone } = await db.from("transactions").delete().eq("id", id).eq("family_id", member.family_id).select("id");
+      const { data: gone, error: delErr } = await db.from("transactions").delete().eq("id", id).eq("family_id", member.family_id).select("id");
+      if (delErr) {
+        console.error("anulare", delErr);
+        await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: ru ? "Не удалось отменить, удалите в приложении." : "Nu am putut anula; șterge-o din aplicație.", show_alert: true });
+        return ok();
+      }
       await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: gone?.length ? (ru ? "Удалено" : "Anulat") : (ru ? "Уже удалено" : "Deja șters") });
       if (cb.message) {
         await tg(BOT_TOKEN, "editMessageText", {
