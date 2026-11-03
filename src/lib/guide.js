@@ -72,7 +72,16 @@ const ro = [
   {
     id: 'update', icon: 'upload', title: 'Actualizarea aplicației',
     parts: [
-      { p: 'Versiunile noi apar în depozitul original. Copia ta (fork) le ia cu un clic; datele din baza ta rămân neatinse.' },
+      { p: 'Versiunile noi apar în depozitul original. Copia ta (fork) le ia **singură, la fiecare 6 ore**, și se republică; datele din baza ta rămân neatinse.' },
+      { h: 'Actualizare automată — o singură setare' },
+      { steps: [
+        'Pe GitHub: poza ta (dreapta-sus) → **Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**.',
+        'Nume: `actualizare`, termen: **No expiration**, bifează **repo** și **workflow** → **Generate token**. Copiază tokenul.',
+        'În depozitul tău: **Settings → Secrets and variables → Actions → New repository secret**, nume `UPDATE_TOKEN`, valoarea = tokenul.',
+        'Gata. Poți verifica în **Actions → Actualizare automată → Run workflow**.',
+      ] },
+      { tip: 'Fără UPDATE_TOKEN actualizarea automată merge și ea, dar nu când versiunea nouă schimbă automatizările; atunci GitHub cere un „Sync fork” manual.' },
+      { h: 'Actualizare manuală' },
       { steps: [
         'Deschide pagina depozitului tău pe GitHub (butonul de mai jos).',
         'Sub butonul verde **Code** apasă **Sync fork** → **Update branch**.',
@@ -158,7 +167,16 @@ const ru = [
   {
     id: 'update', icon: 'upload', title: 'Обновление приложения',
     parts: [
-      { p: 'Новые версии появляются в исходном репозитории. Ваша копия (fork) получает их одним нажатием; данные в вашей базе не затрагиваются.' },
+      { p: 'Новые версии появляются в исходном репозитории. Ваша копия (fork) получает их **сама, каждые 6 часов**, и публикуется заново; данные в вашей базе не затрагиваются.' },
+      { h: 'Автообновление — одна настройка' },
+      { steps: [
+        'На GitHub: ваше фото (справа вверху) → **Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**.',
+        'Название: `actualizare`, срок: **No expiration**, отметьте **repo** и **workflow** → **Generate token**. Скопируйте токен.',
+        'В своём репозитории: **Settings → Secrets and variables → Actions → New repository secret**, имя `UPDATE_TOKEN`, значение — токен.',
+        'Готово. Проверить: **Actions → Actualizare automată → Run workflow**.',
+      ] },
+      { tip: 'Без UPDATE_TOKEN автообновление тоже работает, но не тогда, когда новая версия меняет автоматизацию; тогда GitHub попросит «Sync fork» вручную.' },
+      { h: 'Обновление вручную' },
       { steps: [
         'Откройте страницу своего репозитория на GitHub (кнопка ниже).',
         'Под зелёной кнопкой **Code** нажмите **Sync fork** → **Update branch**.',

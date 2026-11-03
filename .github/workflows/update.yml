@@ -1,0 +1,54 @@
+name: Actualizare automată
+
+# În copiile altor familii (fork): ia singură versiunea nouă din depozitul original și o publică.
+# E același lucru ca butonul „Sync fork”, doar că se face singur, la fiecare 6 ore.
+# În depozitul original nu face nimic.
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync:
+    if: github.repository != 'aandronic95/banii-familiei'
+    runs-on: ubuntu-latest
+    env:
+      # Cu UPDATE_TOKEN (token cu drepturile „repo” și „workflow”) merg și actualizările care schimbă automatizările.
+      GH_TOKEN: ${{ secrets.UPDATE_TOKEN || github.token }}
+      HAS_PAT: ${{ secrets.UPDATE_TOKEN != '' }}
+    steps:
+      - name: Ia versiunea nouă din depozitul original
+        run: |
+          FORK=$(gh api "repos/$GITHUB_REPOSITORY" --jq '.fork')
+          if [ "$FORK" != "true" ]; then
+            echo "::notice::Depozitul nu e un fork, deci nu se poate actualiza singur. Vezi ghidul: fă un fork nou și pune aceleași setări."
+            exit 0
+          fi
+          set +e
+          OUT=$(gh api -X POST "repos/$GITHUB_REPOSITORY/merge-upstream" -f branch=main 2>&1)
+          RC=$?
+          set -e
+          echo "$OUT"
+          if [ $RC -ne 0 ]; then
+            if echo "$OUT" | grep -qi "workflow"; then
+              echo "::error title=Actualizare::Versiunea nouă schimbă și automatizările, iar GitHub cere pentru asta un token cu dreptul „workflow”. Adaugă secretul UPDATE_TOKEN (ghidul: Actualizarea aplicației) sau apasă o dată „Sync fork” pe pagina depozitului."
+            elif echo "$OUT" | grep -qiE "conflict|409"; then
+              echo "::error title=Actualizare::Copia ta are modificări proprii care nu se potrivesc cu versiunea nouă. Pe pagina depozitului apasă „Sync fork” și alege ce păstrezi."
+            else
+              echo "::error title=Actualizare::Nu am putut lua versiunea nouă: $(echo "$OUT" | tail -1 | cut -c1-300)"
+            fi
+            exit 1
+          fi
+          TYPE=$(echo "$OUT" | jq -r '.merge_type // "none"' 2>/dev/null || echo none)
+          if [ "$TYPE" = "none" ]; then echo "Aplicația e deja la zi."; exit 0; fi
+          echo "Am luat versiunea nouă ($TYPE)."
+          # Cu tokenul implicit al GitHub, schimbarea nu pornește singură publicarea: o pornim noi
+          if [ "$HAS_PAT" != "true" ]; then
+            gh workflow run deploy.yml --repo "$GITHUB_REPOSITORY" --ref main
+            echo "Am pornit publicarea."
+          fi
