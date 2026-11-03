@@ -6,7 +6,7 @@ import { todayISO, uuid } from './lib/format.js'
 import { cacheGet, cacheSet, cacheDel } from './lib/cache.js'
 import { toast } from './components/Toast.js'
 import { t as tr } from './lib/i18n.js'
-import { accruedInterest, liveAccrued, perDay, assetValue, couponInfo } from './lib/invest.js'
+import { accruedInterest, liveAccrued, perDay, assetValue, couponInfo, annuityInfo } from './lib/invest.js'
 import { detectSubscriptions, suggestBudget } from './lib/insights.js'
 import { schedule } from './lib/loan.js'
 import { nextDue, parseShopping } from './lib/taskparse.js'
@@ -500,18 +500,21 @@ export function investStatus(inv, today = todayISO()) {
   const days = Math.max(0, Math.round((Date.parse(end) - Date.parse(inv.start_date)) / DAY))
   // cu plată periodică, dobânda se adună doar de la ultimul cupon (cele dinainte au fost deja plătite)
   const coupon = ACCRUING.includes(inv.kind) ? couponInfo(amount, inv.rate, inv.start_date, inv.maturity_date, inv.coupon_freq, today) : null
-  const accrued = ACCRUING.includes(inv.kind) ? accruedInterest(amount, inv.rate, coupon ? coupon.last : inv.start_date, end) : 0
-  const received = S.transactions
+  // P2P: rată lunară egală; valoarea = ce n-a fost încă rambursat (+ dobânda de la ultima rată)
+  const annuity = inv.kind === 'p2p' && inv.current_value == null ? annuityInfo(amount, inv.rate, inv.start_date, inv.maturity_date, today) : null
+  const accrued = annuity ? annuity.accrued : ACCRUING.includes(inv.kind) ? accruedInterest(amount, inv.rate, coupon ? coupon.last : inv.start_date, end) : 0
+  const txReceived = S.transactions
     .filter((x) => x.investment_id === inv.id && x.kind === 'income')
     .reduce((s, x) => s + Number(x.amount) * (accountById(x.account_id)?.currency === inv.currency ? 1 : (S.rates[accountById(x.account_id)?.currency] ?? 1) / (S.rates[inv.currency] ?? 1)), 0)
+  const received = txReceived > 0 ? txReceived : annuity ? annuity.received : 0
   const returned = S.transactions.filter((x) => x.investment_id === inv.id && x.kind === 'divest')
     .reduce((s, x) => s + Number(x.amount), 0)
   const closed = inv.status === 'closed'
-  const value = closed ? 0 : inv.current_value != null ? Number(inv.current_value) : ACCRUING.includes(inv.kind) ? amount + accrued : amount
-  const total = inv.rate && inv.maturity_date && ACCRUING.includes(inv.kind)
+  const value = closed ? 0 : inv.current_value != null ? Number(inv.current_value) : annuity ? annuity.remaining + annuity.accrued : ACCRUING.includes(inv.kind) ? amount + accrued : amount
+  const total = annuity ? annuity.totalInterest : inv.rate && inv.maturity_date && ACCRUING.includes(inv.kind)
     ? accruedInterest(amount, inv.rate, inv.start_date, inv.maturity_date)
     : null
-  return { accrued, received, returned, value, closed, expectedAtMaturity: total, days, coupon }
+  return { accrued, received, returned, value, closed, expectedAtMaturity: total, days, coupon, annuity }
 }
 
 export const investStatuses = computed(() => Object.fromEntries(S.investments.map((i) => [i.id, investStatus(i)])))
@@ -532,6 +535,10 @@ export function liveInfo(inv) {
   if (ACCRUING.includes(inv.kind) && inv.current_value == null) {
     const c = couponInfo(Number(inv.amount), inv.rate, inv.start_date, inv.maturity_date, inv.coupon_freq, todayISO())
     return { base: Number(inv.amount), since: msOf(c ? c.last : inv.start_date) }
+  }
+  if (inv.kind === 'p2p' && inv.current_value == null) {
+    const a = annuityInfo(Number(inv.amount), inv.rate, inv.start_date, inv.maturity_date, todayISO())
+    if (a) return a.remaining > 0 && a.paid < a.n ? { base: a.remaining, since: msOf(a.last) } : null
   }
   const base = inv.current_value != null ? Number(inv.current_value) : Number(inv.amount)
   let since = msOf(inv.current_value != null && inv.value_date ? inv.value_date : inv.start_date)

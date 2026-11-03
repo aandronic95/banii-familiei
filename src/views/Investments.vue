@@ -48,6 +48,9 @@ function sub(i) {
   if (i.code) bits.push(i.code)
   if (i.rate) bits.push(String(Number(i.rate)).replace('.', ',') + '%')
   if (i.maturity_date) bits.push(t('matures', dateLong(i.maturity_date)))
+  const an = investStatuses.value[i.id]?.annuity
+  if (an) bits.push(t('annLeft', money(an.remaining), an.paid, an.n))
+  if (an?.next) bits.push(t('annNextShort', dateLong(an.next), money(an.nextAmount)))
   const c = investStatuses.value[i.id]?.coupon
   if (c?.next && c.next !== i.maturity_date) bits.push(t('couponNextShort', dateLong(c.next), money(c.nextAmount)))
   const m = memberById(i.member_id)

@@ -174,6 +174,13 @@ async function del() {
       <div class="kv"><span class="muted">{{ t('invValue') }}</span><b>{{ money(preview.value) }} {{ f.currency }}</b></div>
       <div v-if="preview.accrued" class="kv"><span class="muted">{{ t('invProfit') }} ({{ t('accruedSoFar') }})</span><b class="bf-income">+{{ money(preview.accrued) }}</b></div>
       <div v-if="preview.expectedAtMaturity" class="kv"><span class="muted">{{ t('expectedAtMaturity') }}</span><b>+{{ money(preview.expectedAtMaturity) }}</b></div>
+      <template v-if="preview.annuity">
+        <div class="kv"><span class="muted">{{ t('annMonthly') }}</span><b>{{ money(preview.annuity.pmt) }} {{ f.currency }}</b></div>
+        <div class="kv"><span class="muted">{{ t('annPaid', preview.annuity.paid, preview.annuity.n) }}</span><b class="bf-income">+{{ money(preview.annuity.received) }}</b></div>
+        <div class="kv"><span class="muted">{{ t('annRemaining') }}</span><b>{{ money(preview.annuity.remaining) }}</b></div>
+        <div v-if="preview.annuity.next" class="kv"><span class="muted">{{ t('couponNext', dateLong(preview.annuity.next)) }}</span><b>{{ money(preview.annuity.nextAmount) }}</b></div>
+        <p class="hint" style="margin: 0;">{{ t('annHint') }}</p>
+      </template>
       <template v-if="preview.coupon">
         <div v-if="preview.coupon.next" class="kv"><span class="muted">{{ t('couponNext', dateLong(preview.coupon.next)) }}</span><b class="bf-income">+{{ money(preview.coupon.nextAmount) }}</b></div>
         <div v-if="preview.coupon.paid" class="kv"><span class="muted">{{ t('couponPaid', preview.coupon.paid, preview.coupon.count) }}</span><b>+{{ money(preview.coupon.paidTotal) }}</b></div>

@@ -627,3 +627,13 @@ test('zile lucrătoare: weekend, sărbători, Paște ortodox; aceeași logică p
   const b = fs.readFileSync(new URL('../supabase/functions/_shared/workday.ts', import.meta.url), 'utf8')
   assert.equal(b.split('\n').slice(1).join('\n'), a)
 })
+
+test('P2P (Fagura): rată lunară egală, suma nerambursată ca pe platformă', async () => {
+  const { annuityInfo } = await import('../src/lib/invest.js')
+  const at = (d) => annuityInfo(25, 21.9, '2026-07-13', '2029-07-13', d)
+  assert.equal(at('2026-11-03').pmt, 0.95)
+  assert.deepEqual([at('2026-08-14').remaining, at('2026-11-03').remaining, at('2026-11-03').paid, at('2026-11-03').n], [24.51, 23.49, 3, 36])
+  assert.equal(at('2026-11-03').next, '2026-11-13')
+  assert.equal(at('2026-07-20').remaining, 25)
+  assert.equal(at('2029-08-01').remaining <= 0.05, true)
+})
