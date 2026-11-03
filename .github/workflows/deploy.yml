@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.122.0  # 3.x a schimbat comenzile; actualizăm după ce verificăm
       - id: c
         name: Citește setările
         run: |
@@ -132,7 +132,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.122.0  # 3.x a schimbat comenzile; actualizăm după ce verificăm
       - name: Leagă proiectul Supabase
         run: |
           supabase --version
