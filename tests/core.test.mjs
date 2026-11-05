@@ -701,3 +701,18 @@ test('extras MAIB PDF: antet pe două rânduri, ieșiri/intrări în moneda cont
     ['2026-11-01', 'income', 16500, 'Transfer salariu'],
   ])
 })
+
+test('dorință cumpărată: găsește cheltuiala deja făcută', async () => {
+  const { wishCandidates } = await import('../src/lib/wishmatch.js')
+  const txs = [
+    { id: 1, kind: 'expense', date: '2026-11-03', mdl: 8990, merchant: 'Bomba', note: 'mașină de spălat vase Bosch' },
+    { id: 2, kind: 'expense', date: '2026-11-04', mdl: 120, merchant: 'Linella' },
+    { id: 3, kind: 'expense', date: '2026-11-02', mdl: 9000, merchant: 'Enter' },
+    { id: 4, kind: 'income', date: '2026-11-03', mdl: 9000, merchant: 'Salariu' },
+    { id: 5, kind: 'expense', date: '2026-03-01', mdl: 9000, merchant: 'Vechi' },
+  ]
+  const r = wishCandidates({ title: 'Mașină de spălat vase', priceMdl: 9000, created_at: '2026-10-20' }, txs, '2026-11-05')
+  assert.deepEqual(r.slice(0, 2).map((c) => c.tx.id), [1, 3])
+  assert.ok(!r.some((c) => c.tx.id === 4 || c.tx.id === 5))
+  assert.deepEqual(wishCandidates({ title: 'x', priceMdl: 0 }, txs, '2026-11-05', { query: 'linel' }).map((c) => c.tx.id), [2])
+})

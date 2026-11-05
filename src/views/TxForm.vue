@@ -308,6 +308,8 @@ async function submit() {
       const list = await saveSplit({ ...row, amount: rest.value }, [{}, ...parts.value.map((p) => ({ ...carless, category_id: p.category_id, amount: parseAmount(p.amount) }))])
       saved = list[0]
     } else saved = await save('transactions', row)
+    // din Lista de dorințe („Adaug-o acum”): dorința se leagă de cheltuiala nouă
+    if (!orig && route.query.wish && S.wishes.some((w) => w.id === route.query.wish) && saved?.id) await save('wishes', { id: route.query.wish, tx_id: saved.id }).catch(() => {})
     // „datorie octavian” / „întors datorie danu”: întrebăm dacă o trecem la Datorii (nu e cheltuială)
     const dcls = !parts.value.length && !row.debt_id && !fromRec && !fromPayout && !saved._pending && (f.kind === 'expense' || f.kind === 'income') ? classifyDebt(f.kind, [row.merchant, row.note].filter(Boolean).join(' ')) : null
     if (dcls && (await confirmDialog(t('txDebtQ', dcls.person || row.merchant || '—')))) {

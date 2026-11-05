@@ -2,9 +2,10 @@
 // Lista de dorințe: ce vreți să cumpărați, cu preț și prioritate; devine obiectiv sau cheltuială
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, save, remove, memberById, toMdl, goalProgress } from '../store.js'
+import { S, save, remove, memberById, toMdl, goalProgress, txCurrency, accountById } from '../store.js'
+import { wishCandidates } from '../lib/wishmatch.js'
 import { t } from '../lib/i18n.js'
-import { money0, parseAmount } from '../lib/format.js'
+import { money0, money, parseAmount, dateShort, todayISO } from '../lib/format.js'
 import { haptic, confirmDialog, openLink } from '../lib/telegram.js'
 import { toast } from '../components/Toast.js'
 import Icon from '../components/Icon.vue'
@@ -37,11 +38,37 @@ async function toGoal(w) {
   toast(t('wishGoalMade'))
   router.push('/goal/' + g.id)
 }
-// Cumpărat: cheltuiala precompletată, dorința bifată
-async function bought(w) {
-  await save('wishes', { id: w.id, done: true, done_at: new Date().toISOString() })
-  router.push({ path: '/tx/new', query: { amount: w.price ? String(w.price) : undefined, merchantText: w.title } })
+// Cumpărat: dacă ai plătit deja, alegi cheltuiala făcută (fără a doua scădere din cont); altfel o adaugi acum
+const buy = ref(null) // dorința pentru care alegem cheltuiala
+const buyQ = ref('')
+const showAll = ref(false)
+function bought(w) { buy.value = w; buyQ.value = ''; showAll.value = false }
+const txsMdl = computed(() => S.transactions.map((x) => ({ ...x, mdl: toMdl(Number(x.amount), txCurrency(x)) })))
+const cands = computed(() => {
+  const w = buy.value
+  if (!w) return []
+  const list = wishCandidates({ title: w.title, priceMdl: w.price ? toMdl(Number(w.price), w.currency) : 0, created_at: w.created_at }, txsMdl.value, todayISO(), { query: buyQ.value })
+  const linked = new Set(S.wishes.filter((x) => x.tx_id).map((x) => x.tx_id))
+  const free = list.filter((c) => !linked.has(c.tx.id))
+  return buyQ.value || showAll.value ? free.slice(0, 30) : free.filter((c) => c.score >= 0.6).slice(0, 5)
+})
+async function linkTx(w, x) {
+  await save('wishes', { id: w.id, done: true, done_at: new Date().toISOString(), tx_id: x.id })
+  buy.value = null
+  haptic('success'); toast(t('wishLinked'))
 }
+async function buyNew(w) {
+  await save('wishes', { id: w.id, done: true, done_at: new Date().toISOString() })
+  buy.value = null
+  router.push({ path: '/tx/new', query: { amount: w.price ? String(w.price) : undefined, merchantText: w.title, wish: w.id } })
+}
+async function justDone(w) {
+  await save('wishes', { id: w.id, done: true, done_at: new Date().toISOString() })
+  buy.value = null
+  haptic('success')
+}
+async function undone(w) { await save('wishes', { id: w.id, done: false, done_at: null, tx_id: null }) }
+const txOf = (w) => (w.tx_id ? S.transactions.find((x) => x.id === w.tx_id) : null)
 async function del(w) {
   if (!(await confirmDialog(t('wishDeleteQ', w.title)))) return
   await remove('wishes', w.id)
@@ -102,7 +129,26 @@ const PRIO = { 1: { label: 'wishP1', color: 'var(--danger)' }, 2: { label: 'wish
         <div class="bf-bar" style="margin-top: 0;"><i :style="{ width: goalProgress(goalOf(w)).pct * 100 + '%' }"></i></div>
         <div class="cap">{{ t('wishSaved', money0(goalProgress(goalOf(w)).saved), money0(goalProgress(goalOf(w)).target)) }}</div>
       </template>
-      <div v-if="!w.done" style="display: flex; gap: 14px; flex-wrap: wrap;">
+      <div v-if="buy && buy.id === w.id" class="stack" style="gap: 8px; border-top: 1px solid var(--line); padding-top: 10px;">
+        <b>{{ t('wishPaidQ') }}</b>
+        <input v-model="buyQ" class="inp" type="search" :placeholder="t('wishSearchTx')" :aria-label="t('wishSearchTx')">
+        <button v-for="c in cands" :key="c.tx.id" type="button" class="kv" style="all: unset; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 12px; background: var(--surface-2);" @click="linkTx(w, c.tx)">
+          <span style="min-width: 0;"><span style="display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ c.tx.merchant || '—' }}</span><span class="cap">{{ dateShort(c.tx.date, true) }} · {{ accountById(c.tx.account_id)?.name || '' }}</span></span>
+          <b class="bf-expense" style="white-space: nowrap;">−{{ money(c.tx.amount) }} {{ txCurrency(c.tx) }}</b>
+        </button>
+        <p v-if="!cands.length" class="hint" style="margin: 0;">{{ buyQ ? t('wishNoTxQ') : t('wishNoTx') }}</p>
+        <button v-if="!buyQ && !showAll" type="button" class="link" style="padding: 0; justify-self: start;" @click="showAll = true">{{ t('wishAllTx') }}</button>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 38px;" @click="buyNew(w)">{{ t('wishNewTx') }}</button>
+          <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 38px;" @click="justDone(w)">{{ t('wishJustDone') }}</button>
+          <button type="button" class="link" style="padding: 0;" @click="buy = null">{{ t('cancel') }}</button>
+        </div>
+      </div>
+      <div v-if="w.done" class="cap" style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <button v-if="txOf(w)" type="button" class="link" style="padding: 0;" @click="router.push('/tx/' + w.tx_id)">🧾 {{ txOf(w).merchant || '—' }} · {{ dateShort(txOf(w).date, true) }} · −{{ money(txOf(w).amount) }} {{ txCurrency(txOf(w)) }}</button>
+        <button type="button" class="link" style="padding: 0;" @click="undone(w)">{{ t('wishUndo') }}</button>
+      </div>
+      <div v-if="!w.done && !(buy && buy.id === w.id)" style="display: flex; gap: 14px; flex-wrap: wrap;">
         <button v-if="!w.goal_id && w.price" type="button" class="link" style="padding: 0;" @click="toGoal(w)">{{ t('wishToGoal') }}</button>
         <button v-else-if="w.goal_id" type="button" class="link" style="padding: 0;" @click="router.push('/goal/' + w.goal_id)">{{ t('wishSeeGoal') }}</button>
         <button type="button" class="link" style="padding: 0;" @click="bought(w)">{{ t('wishBought') }}</button>
