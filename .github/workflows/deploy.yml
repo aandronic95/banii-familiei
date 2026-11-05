@@ -130,6 +130,8 @@ jobs:
           [ -z "$OWNER_TELEGRAM_ID" ] && echo "::warning::OWNER_TELEGRAM_ID lipsește: aplicația îți va arăta ID-ul, apoi adaugă-l și rulează din nou."
           true
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 60  # titlurile ultimelor schimbări, pentru anunțul din bot
       - uses: supabase/setup-cli@v1
         with:
           version: 2.122.0  # 3.x a schimbat comenzile; actualizăm după ce verificăm
@@ -173,6 +175,13 @@ jobs:
           JOBS=$(echo "$OUT" | jq -r '.cron.jobs // 0' 2>/dev/null || echo 0)
           if [ "${JOBS:-0}" -ge 6 ]; then echo "Programări active în baza de date: $JOBS"
           else echo "::warning::Programările din baza de date nu sunt active ($JOBS); notificările vin din GitHub și pot întârzia."; fi
+      - name: Anunță versiunea nouă în bot
+        run: |
+          SECRET=$(printf 'cron:%s' "$TELEGRAM_BOT_TOKEN" | sha256sum | cut -c1-48)
+          COMMITS=$(git log -60 --format='%H%x1f%cI%x1f%s' | jq -R -s 'split("\n") | map(select(length > 0) | split("\u001f") | {sha: .[0], date: .[1], title: .[2]})')
+          BODY=$(jq -n --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" --arg date "$(git log -1 --format=%cI)" --argjson commits "$COMMITS" '{sha: $sha, repo: $repo, date: $date, commits: $commits}')
+          curl -sf -X POST "https://${PROJECT_REF}.supabase.co/functions/v1/notify?task=release" -H "x-cron-secret: ${SECRET}" -H "content-type: application/json" -d "$BODY" || echo "::warning::Nu am putut trimite anunțul versiunii noi."
+          echo
       - name: Configurează botul Telegram
         run: |
           API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"

@@ -7,6 +7,7 @@ import { ratesFor } from "../_shared/bnm.ts";
 import { weeklyText, type WeekTx } from "../_shared/weekly.ts";
 import { advance, askKeyboard, dueDate, RT } from "../_shared/recurring.ts";
 import { addPayout, convert, payKeyboard, PT } from "../_shared/payouts.ts";
+import { behindText, type Commit, newCommits, releaseText, UPSTREAM } from "../_shared/release.ts";
 import { accruedInterest, couponDates, duePayouts } from "../_shared/invest.ts";
 import { nextEventDate, turning } from "../_shared/home.ts";
 import { nowLocalHM, taskButtons, taskLine, T as TT } from "../_shared/tasks.ts";
@@ -111,8 +112,73 @@ async function latestRates(): Promise<Record<string, number>> {
   return out;
 }
 
+// ───────────── Versiunea nouă ─────────────
+async function meta(key: string) {
+  const { data } = await db.from("app_meta").select("value").eq("key", key).maybeSingle();
+  return (data?.value ?? null) as Record<string, unknown> | null;
+}
+const setMeta = (key: string, value: unknown) => db.from("app_meta").upsert({ key, value, updated_at: new Date().toISOString() });
+// deno-lint-ignore no-explicit-any
+async function allMembers(): Promise<any[]> {
+  const { data } = await db.from("members").select("telegram_id, lang, notify, role").in("role", ["owner", "editor"]).not("telegram_id", "is", null);
+  return data ?? [];
+}
+// deno-lint-ignore no-explicit-any
+async function release(body: any) {
+  const commits = (Array.isArray(body?.commits) ? body.commits : []).filter((c: Commit) => c?.sha && c?.title).slice(0, 60) as Commit[];
+  const sha = String(body?.sha ?? commits[0]?.sha ?? "");
+  if (!sha) return { sent: 0 };
+  const cur = (await meta("release")) ?? {};
+  const fresh = newCommits(commits, (cur.announced as string) ?? null);
+  // ce n-a fost încă anunțat se adună, ca să nu trimitem un mesaj la fiecare mică publicare
+  const pending = [...fresh, ...((cur.pending as Commit[]) ?? [])].filter((c, i, a) => a.findIndex((x) => x.sha === c.sha) === i).slice(0, 12);
+  const lastSent = Date.parse(String(cur.sent_at ?? 0)) || 0;
+  const next = { ...cur, sha, repo: body?.repo ?? cur.repo ?? null, date: body?.date ?? null, announced: sha, pending };
+  if (!pending.length || Date.now() - lastSent < 6 * 3600000) { await setMeta("release", next); return { sent: 0, pending: pending.length }; }
+  let sent = 0;
+  for (const m of await allMembers()) {
+    if (m.notify?.updates === false) continue;
+    await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id, text: releaseText(pending, m.lang === "ru" ? "ru" : "ro"), reply_markup: { inline_keyboard: [[{ text: (m.lang === "ru" ? T.ru : T.ro).open, web_app: { url: APP_URL } }]] } });
+    sent++;
+  }
+  await setMeta("release", { ...next, pending: [], sent_at: new Date().toISOString() });
+  return { sent };
+}
+// Zilnic: ce a rămas neanunțat pleacă acum; copiile rămase în urmă cu peste o zi primesc îndemnul să se actualizeze
+async function releaseDaily(today: string) {
+  const cur = (await meta("release")) ?? {};
+  const pending = (cur.pending as Commit[]) ?? [];
+  if (pending.length) {
+    for (const m of await allMembers()) {
+      if (m.notify?.updates === false) continue;
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id, text: releaseText(pending, m.lang === "ru" ? "ru" : "ro") });
+    }
+    await setMeta("release", { ...cur, pending: [], sent_at: new Date().toISOString() });
+  }
+  const repo = String(cur.repo ?? "");
+  if (!repo || repo.toLowerCase() === UPSTREAM || !cur.sha) return;
+  try {
+    const r = await fetch(`https://api.github.com/repos/${UPSTREAM}/commits/main`, { headers: { accept: "application/vnd.github+json", "user-agent": "banii-familiei-notify" } });
+    if (!r.ok) return;
+    const c = await r.json();
+    const upSha = String(c?.sha ?? ""), upDate = Date.parse(c?.commit?.committer?.date ?? "");
+    const mine = String(cur.sha);
+    if (!upSha || upSha.startsWith(mine) || mine.startsWith(upSha)) return;
+    // după 24 de ore: actualizarea automată (dacă e pornită) ar fi avut timp să o ia
+    if (!(Date.now() - upDate > 24 * 3600000)) return;
+    if (!(await once(`behind:${upSha}`))) return;
+    const { data: owners } = await db.from("members").select("telegram_id, lang, notify").eq("role", "owner").not("telegram_id", "is", null);
+    for (const m of owners ?? []) {
+      if (m.notify?.updates === false) continue;
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id, text: behindText(m.lang === "ru" ? "ru" : "ro", repo) });
+    }
+  } catch (_) { /* GitHub indisponibil: încercăm mâine */ }
+  void today;
+}
+
 async function daily(today: string) {
   await refreshRates(today);
+  await releaseDaily(today).catch((e) => console.error("versiune", e));
   const rates = await latestRates();
   const toMdl = (a: number, cur: string) => a * (rates[cur] ?? 1);
   const month = today.slice(0, 7);
@@ -545,6 +611,12 @@ Deno.serve(async (req) => {
   const today = todayLocal();
   // Ține la zi adresa și secretul pentru programările din baza de date (pg_cron)
   await db.from("cron_config").upsert({ id: 1, base_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1`, secret: expected, updated_at: new Date().toISOString() }).then(() => {}, () => {});
+  if (task === "release") {
+    // chemat de publicare, cu lista ultimelor schimbări: anunțăm în bot ce e nou (cel mult o dată la 6 ore)
+    const body = await req.json().catch(() => ({}));
+    const out = await release(body);
+    return new Response(JSON.stringify({ ok: true, task, ...out }), { headers: { "content-type": "application/json" } });
+  }
   if (task === "setup") {
     const { data: cron } = await db.rpc("cron_status");
     return new Response(JSON.stringify({ ok: true, task, cron }), { headers: { "content-type": "application/json" } });

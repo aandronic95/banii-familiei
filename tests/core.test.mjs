@@ -727,3 +727,14 @@ test('RON: curs BNM, botul, Apple Pay', async () => {
   const w = await import('../supabase/functions/_shared/wallet.ts')
   assert.deepEqual(w.parseWalletAmount('12,30 RON'), { amount: 12.3, currency: 'RON' })
 })
+
+const relTs = await import('../supabase/functions/_shared/release.ts').catch((e) => { console.error(e); return null })
+test('anunțul versiunii noi: doar schimbările de după ultimul anunț', { skip: !relTs }, () => {
+  const { newCommits, releaseText } = relTs
+  const list = [{ sha: 'c3', title: 'Moneda RON' }, { sha: 'c2', title: 'Publicare: CLI fixat' }, { sha: 'c1', title: 'Lista de dorințe' }, { sha: 'c0', title: 'Vechi' }]
+  assert.deepEqual(newCommits(list, 'c1').map((c) => c.sha), ['c3'])
+  assert.deepEqual(newCommits(list, 'c3'), [])
+  assert.deepEqual(newCommits(list, null).map((c) => c.sha), ['c3', 'c1', 'c0'])
+  const t = releaseText([{ sha: 'c3', title: 'Moneda RON: conturi' }], 'ro')
+  assert.match(t, /^🆕 Aplicația s-a actualizat\. Ce e nou:\n• Moneda RON: conturi\n/)
+})
