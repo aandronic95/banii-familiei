@@ -49,12 +49,12 @@ export function parseQuick(input: string): Quick | null {
   let cardDigits: string | null = null;
   text = text.replace(/(?:^|\s)(?:de pe |pe |с |по )?(?:card(?:ul)?|карт[аыуе]|карточк[аиу])\s*\*?(\d{4})(?=\s|$)/i, (_m, d) => { cardDigits = d; return " "; }).replace(/\s+/g, " ").trim();
   // Suma: primul număr (cu zecimale și spații de mii), cu monedă lipită sau separată
-  const m = text.match(/(?:^|\s)(€|\$)?\s*(\d{1,3}(?:[  ]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(€|\$|eur|euro|usd|dolari?|mdl|lei|l)?(?=\s|$|[.,!])/i);
+  const m = text.match(/(?:^|\s)(€|\$)?\s*(\d{1,3}(?:[  ]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(€|\$|eur|euro|usd|dolari?|ron|mdl|lei|l)?(?=\s|$|[.,!])/i);
   if (!m) return null;
   const amount = Math.round(parseFloat(m[2].replace(/[  ]/g, "").replace(",", ".")) * 100) / 100;
   if (!(amount > 0) || amount > 10_000_000) return null;
   const cur = norm((m[1] || m[3] || "").trim());
-  const currency = cur === "€" || cur.startsWith("eur") ? "EUR" : cur === "$" || cur.startsWith("usd") || cur.startsWith("dolar") ? "USD" : "MDL";
+  const currency = cur === "€" || cur.startsWith("eur") ? "EUR" : cur === "$" || cur.startsWith("usd") || cur.startsWith("dolar") ? "USD" : cur === "ron" ? "RON" : "MDL";
 
   const rest = (text.slice(0, m.index) + " " + text.slice((m.index ?? 0) + m[0].length)).replace(/\s+/g, " ").trim();
   const words = rest.split(" ").filter(Boolean);

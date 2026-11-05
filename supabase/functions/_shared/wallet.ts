@@ -7,7 +7,8 @@ export function parseWalletAmount(input: unknown, fallbackCurrency = "MDL"): { a
   if (!raw) return null;
   const up = raw.toUpperCase();
   let currency = fallbackCurrency;
-  if (/€|EUR/.test(up)) currency = "EUR";
+  if (/\bRON\b/.test(up)) currency = "RON";
+  else if (/€|EUR/.test(up)) currency = "EUR";
   else if (/\$|USD/.test(up)) currency = "USD";
   else if (/MDL|LEI|\bL\b/.test(up)) currency = "MDL";
 

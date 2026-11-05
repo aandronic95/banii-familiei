@@ -716,3 +716,14 @@ test('dorință cumpărată: găsește cheltuiala deja făcută', async () => {
   assert.ok(!r.some((c) => c.tx.id === 4 || c.tx.id === 5))
   assert.deepEqual(wishCandidates({ title: 'x', priceMdl: 0 }, txs, '2026-11-05', { query: 'linel' }).map((c) => c.tx.id), [2])
 })
+
+test('RON: curs BNM, botul, Apple Pay', async () => {
+  const { parseBnmXml } = await import('../supabase/functions/_shared/bnm.ts')
+  const xml = '<ValCurs><Valute><CharCode>EUR</CharCode><Nominal>1</Nominal><Value>19.4521</Value></Valute><Valute><CharCode>RON</CharCode><Nominal>1</Nominal><Value>3.9112</Value></Valute><Valute><CharCode>UAH</CharCode><Nominal>1</Nominal><Value>0.42</Value></Valute></ValCurs>'
+  assert.deepEqual(parseBnmXml(xml), { EUR: 19.4521, RON: 3.9112 })
+  const q = await import('../supabase/functions/_shared/quick.ts')
+  assert.equal(q.parseQuick('benzina 250 ron').currency, 'RON')
+  assert.equal(q.parseQuick('cafea 45 lei').currency, 'MDL')
+  const w = await import('../supabase/functions/_shared/wallet.ts')
+  assert.deepEqual(w.parseWalletAmount('12,30 RON'), { amount: 12.3, currency: 'RON' })
+})

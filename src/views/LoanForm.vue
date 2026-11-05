@@ -1,4 +1,5 @@
 <script setup>
+import { CURRENCIES, FX } from '../lib/currencies.js'
 import { reactive, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, save, remove } from '../store.js'
@@ -61,7 +62,7 @@ async function del() {
     <div class="fld"><label for="l-name">{{ t('name') }}</label><input id="l-name" v-model="f.name" class="inp" maxlength="40" :placeholder="t(f.type)"></div>
     <div class="grid2">
       <div class="fld"><label for="l-bank">{{ t('bank') }}</label><input id="l-bank" v-model="f.bank" class="inp" maxlength="30"></div>
-      <div class="fld"><label for="l-cur">{{ t('currency') }}</label><select id="l-cur" v-model="f.currency" class="inp"><option>MDL</option><option>EUR</option><option>USD</option></select></div>
+      <div class="fld"><label for="l-cur">{{ t('currency') }}</label><select id="l-cur" v-model="f.currency" class="inp"><option v-for="c in CURRENCIES" :key="c">{{ c }}</option></select></div>
     </div>
     <div class="grid2">
       <div class="fld"><label for="l-p">{{ t('principal') }}</label><input id="l-p" v-model="f.principal" class="inp" inputmode="decimal"></div>

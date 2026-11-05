@@ -1,4 +1,5 @@
 <script setup>
+import { CURRENCIES, FX } from '../lib/currencies.js'
 import { reactive, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, save, remove, balances, accountById, assetNow } from '../store.js'
@@ -104,8 +105,8 @@ async function del() {
 
     <div class="fld">
       <span class="lbl">{{ t('currency') }}</span>
-      <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
-        <button v-for="c in ['MDL', 'EUR', 'USD']" :key="c" type="button" :class="{ on: f.currency === c }" @click="f.currency = c">{{ c }}</button>
+      <div class="seg" style="grid-template-columns: repeat(4, minmax(0, 1fr));">
+        <button v-for="c in CURRENCIES" :key="c" type="button" :class="{ on: f.currency === c }" @click="f.currency = c">{{ c }}</button>
       </div>
     </div>
 

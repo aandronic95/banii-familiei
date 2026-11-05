@@ -2,7 +2,7 @@
 // https://www.bnm.md/ro/official_exchange_rates?get_xml=1&date=DD.MM.YYYY
 // deno-lint-ignore-file no-explicit-any
 
-export const CURRENCIES = ["EUR", "USD"] as const;
+export const CURRENCIES = ["EUR", "USD", "RON"] as const;
 
 export function parseBnmXml(xml: string): Record<string, number> {
   const out: Record<string, number> = {};

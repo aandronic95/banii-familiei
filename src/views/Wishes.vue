@@ -1,5 +1,6 @@
 <script setup>
 // Lista de dorințe: ce vreți să cumpărați, cu preț și prioritate; devine obiectiv sau cheltuială
+import { CURRENCIES, FX } from '../lib/currencies.js'
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { S, save, remove, memberById, toMdl, goalProgress, txCurrency, accountById } from '../store.js'
@@ -92,7 +93,7 @@ const PRIO = { 1: { label: 'wishP1', color: 'var(--danger)' }, 2: { label: 'wish
       <div class="grid2">
         <div class="fld"><label for="w-p">{{ t('wishPrice') }}</label><input id="w-p" v-model="edit.price" class="inp" inputmode="decimal" placeholder="0"></div>
         <div class="fld"><span class="lbl">{{ t('currency') }}</span>
-          <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));"><button v-for="c in ['MDL', 'EUR', 'USD']" :key="c" type="button" :class="{ on: edit.currency === c }" @click="edit.currency = c">{{ c }}</button></div></div>
+          <div class="seg" style="grid-template-columns: repeat(4, minmax(0, 1fr));"><button v-for="c in CURRENCIES" :key="c" type="button" :class="{ on: edit.currency === c }" @click="edit.currency = c">{{ c }}</button></div></div>
       </div>
       <div class="fld"><span class="lbl">{{ t('wishPriority') }}</span>
         <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));"><button v-for="p in [1, 2, 3]" :key="p" type="button" :class="{ on: edit.priority === p }" @click="edit.priority = p">{{ t(PRIO[p].label) }}</button></div></div>

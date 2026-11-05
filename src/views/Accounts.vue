@@ -49,7 +49,7 @@ const fmtRate = (r) => String(r).replace('.', ',')
       <div class="bf-chips" style="margin-top: 12px;">
         <span v-for="(v, c) in totalsByCurrency" :key="c" class="bf-chip">{{ money0(v) }} {{ c }}</span>
       </div>
-      <div v-if="S.rates.EUR" class="bf-budget__note" style="margin-top: 8px;">{{ t('rateNote', 'EUR', fmtRate(S.rates.EUR)) }} · 1 USD = {{ fmtRate(S.rates.USD || '—') }} MDL</div>
+      <div v-if="S.rates.EUR" class="bf-budget__note" style="margin-top: 8px;">{{ t('rateNote', 'EUR', fmtRate(S.rates.EUR)) }} · 1 USD = {{ fmtRate(S.rates.USD || '—') }}<template v-if="S.rates.RON"> · 1 RON = {{ fmtRate(S.rates.RON) }}</template> MDL</div>
     </div>
 
     <section v-for="g in groups" :key="g.key">

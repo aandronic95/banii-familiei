@@ -1,4 +1,5 @@
 <script setup>
+import { CURRENCIES, FX } from '../lib/currencies.js'
 import { reactive, ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, me, save, remove, activeAccounts, balances, investStatus, convertTo, accountById } from '../store.js'
@@ -153,7 +154,7 @@ async function del() {
       </div>
       <div class="fld">
         <label for="i-cur">{{ t('currency') }}</label>
-        <select id="i-cur" v-model="f.currency" class="inp"><option>MDL</option><option>EUR</option><option>USD</option></select>
+        <select id="i-cur" v-model="f.currency" class="inp"><option v-for="c in CURRENCIES" :key="c">{{ c }}</option></select>
       </div>
     </div>
     <div class="fld"><label for="i-n">{{ t('invName') }}</label><input id="i-n" v-model="f.name" class="inp" maxlength="50"></div>

@@ -8,7 +8,7 @@ export { classifyDebt };
 export async function convertDebt(db: Any, tx: Any, cls: Any, currency: string) {
   cls = { ...cls };
   const amount = Number(tx.amount);
-  const cur = ["MDL", "EUR", "USD"].includes(currency) ? currency : "MDL";
+  const cur = ["MDL", "EUR", "USD", "RON"].includes(currency) ? currency : "MDL";
   const person = cls.person || tx.merchant || "—";
   let debtId: string | null = null;
   if (cls.type === "lend" || cls.type === "borrow") {

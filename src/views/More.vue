@@ -1,4 +1,5 @@
 <script setup>
+import { CURRENCIES, FX } from '../lib/currencies.js'
 import { reactive, computed, ref, watch, onMounted } from 'vue'
 import { updateStatus, isUpstream } from '../lib/version.js'
 import { useRouter } from 'vue-router'
@@ -120,8 +121,8 @@ async function sendDoc(type) {
   } catch (e) { console.error(e); toast(t('error', e)) } finally { docBusy.value = '' }
 }
 const fmtRate = (v) => (v ? String(v).replace('.', ',') : '')
-const rates = reactive({ EUR: fmtRate(S.rates.EUR), USD: fmtRate(S.rates.USD) })
-watch(() => [S.rates.EUR, S.rates.USD], ([e, u]) => { rates.EUR = fmtRate(e); rates.USD = fmtRate(u) })
+const rates = reactive(Object.fromEntries(FX.map((c) => [c, fmtRate(S.rates[c])])))
+watch(() => FX.map((c) => S.rates[c]), (v) => { FX.forEach((c, i) => { rates[c] = fmtRate(v[i]) }) })
 const rateDate = ref(todayISO())
 const pastRates = ref(null)
 const rateBusy = ref(false)
@@ -240,7 +241,7 @@ const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetS
     <section class="stack">
       <div class="bf-list__head" style="padding-bottom: 0;">{{ t('rates') }}</div>
       <div class="grid2">
-        <div v-for="c in ['EUR', 'USD']" :key="c" class="fld">
+        <div v-for="c in FX" :key="c" class="fld">
           <label :for="'r-' + c">1 {{ c }} = MDL</label>
           <input :id="'r-' + c" v-model="rates[c]" class="inp" inputmode="decimal" @change="saveRate(c)">
         </div>
@@ -257,7 +258,7 @@ const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetS
           <button type="button" class="link" style="padding: 0;" @click="delFx(i)">{{ t('delete') }}</button>
         </div>
         <div style="display: grid; grid-template-columns: 76px 1fr 1fr auto; gap: 6px;">
-          <select v-model="fxNew.cur" class="inp" :aria-label="t('fxCur')" style="padding: 0 8px;"><option>EUR</option><option>USD</option></select>
+          <select v-model="fxNew.cur" class="inp" :aria-label="t('fxCur')" style="padding: 0 8px;"><option v-for="c in FX" :key="c">{{ c }}</option></select>
           <select v-model="fxNew.op" class="inp" :aria-label="t('fxDir')" style="padding: 0 8px;"><option value="<">{{ t('fxBelow') }}</option><option value=">">{{ t('fxAbove') }}</option></select>
           <input v-model="fxNew.v" class="inp" inputmode="decimal" :placeholder="S.rates[fxNew.cur] ? fmtRate(S.rates[fxNew.cur]) : '19,50'" :aria-label="t('fxValue')">
           <button type="button" class="bf-btn bf-btn--secondary" style="min-height: 48px; padding: 0 14px;" :disabled="!(parseAmount(fxNew.v) > 0)" @click="addFx">{{ t('add') }}</button>

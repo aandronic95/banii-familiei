@@ -33,7 +33,7 @@ async function loadFamily(familyId: string) {
     all("investments", familyId), all("debts", familyId), all("goals", familyId), all("recurring", familyId, "next_date"),
   ]);
   const rates: Record<string, number> = { MDL: 1 };
-  for (const c of ["EUR", "USD"]) {
+  for (const c of ["EUR", "USD", "RON"]) {
     const { data } = await db.from("rates").select("rate").eq("currency", c).order("date", { ascending: false }).limit(1);
     if (data?.[0]) rates[c] = Number(data[0].rate);
   }

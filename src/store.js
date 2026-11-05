@@ -13,6 +13,7 @@ import { nextDue, parseShopping } from './lib/taskparse.js'
 import { nextEventDate, turning, daysBetween as daysBetweenISO } from './lib/home.js'
 import { tripStats, tripOn } from './lib/trip.js'
 import { shiftWorkday } from './lib/workday.js'
+import { CURRENCIES, FX } from './lib/currencies.js'
 import { priceIndex } from './lib/prices.js'
 import { demoData, demoClient } from './lib/demo.js'
 import { classifyDebt, samePerson } from './lib/debtparse.js'
@@ -135,7 +136,7 @@ export function enterDemo() {
   queue = []
   const data = demoData(todayISO())
   Object.assign(S, data, { demo: true, offline: false, pending: 0, cachedAt: null, tgId: null })
-  Object.assign(S.rates, { MDL: 1, EUR: S.rates.EUR > 1 ? S.rates.EUR : 19.4, USD: S.rates.USD > 1 ? S.rates.USD : 17.2 })
+  Object.assign(S.rates, { MDL: 1, EUR: S.rates.EUR > 1 ? S.rates.EUR : 19.4, USD: S.rates.USD > 1 ? S.rates.USD : 17.2, RON: S.rates.RON > 0 ? S.rates.RON : 3.9 })
   S.status = 'ready'
 }
 export function exitDemo() {
@@ -217,7 +218,7 @@ async function afterLogin() {
   S.offline = false
   S.cachedAt = null
   schedulePersist()
-  if (S.rateDates.EUR !== todayISO() || S.rateDates.USD !== todayISO()) refreshRates().catch((e) => console.warn('curs BNM', e))
+  if (FX.some((c) => S.rateDates[c] !== todayISO())) refreshRates().catch((e) => console.warn('curs BNM', e))
 }
 
 // Reîncarcă datele când aplicația revine în prim-plan (conexiunea live se poate pierde în fundal)
@@ -479,7 +480,7 @@ export const totalMdl = computed(() =>
   activeAccounts.value.reduce((s, a) => s + toMdl(balances.value[a.id] ?? 0, a.currency), 0))
 
 export const totalsByCurrency = computed(() => {
-  const o = { MDL: 0, EUR: 0, USD: 0 }
+  const o = Object.fromEntries(CURRENCIES.map((c) => [c, 0]))
   for (const a of activeAccounts.value) o[a.currency] += balances.value[a.id] ?? 0
   return o
 })
@@ -1184,7 +1185,7 @@ export async function confirmPayout(inv, row, over = {}) {
 // O cheltuială „datorie octavian 600” devine bani dați cu împrumut (Datorii), nu cheltuială; la fel întoarcerea.
 export async function convertToDebt(tx, cls) {
   const amount = Number(tx.amount)
-  const currency = ['MDL', 'EUR', 'USD'].includes(txCurrency(tx)) ? txCurrency(tx) : 'MDL'
+  const currency = CURRENCIES.includes(txCurrency(tx)) ? txCurrency(tx) : 'MDL'
   const person = cls.person || tx.merchant || tr('debtSomeone')
   let debt
   if (cls.type === 'lend' || cls.type === 'borrow') {

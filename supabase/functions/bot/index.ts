@@ -83,7 +83,7 @@ async function saveQuick(member: { id: string; family_id: string; user_id: strin
 // Ultimul curs salvat (câți MDL face 1 EUR / 1 USD)
 async function latestRates(): Promise<Record<string, number>> {
   const out: Record<string, number> = { MDL: 1 };
-  for (const c of ["EUR", "USD"]) {
+  for (const c of ["EUR", "USD", "RON"]) {
     const { data } = await db.from("rates").select("rate").eq("currency", c).order("date", { ascending: false }).limit(1);
     if (data?.[0]) out[c] = Number(data[0].rate);
   }
@@ -214,7 +214,7 @@ Deno.serve(async (req) => {
         let note = tx.note;
         if (to.id !== tx.account_id && from) {
           // Suma inițială rămâne în notă („inițial 45,00 MDL”), ca mutările repetate să nu piardă din rotunjiri
-          const ORIG = /\s*·?\s*(?:inițial|изначально) ([\d ]+,\d{2}) (MDL|EUR|USD)$/;
+          const ORIG = /\s*·?\s*(?:inițial|изначально) ([\d ]+,\d{2}) (MDL|EUR|USD|RON)$/;
           const m = (tx.note ?? "").match(ORIG);
           const origAmt = m ? Number(m[1].replace(/\s/g, "").replace(",", ".")) : Number(tx.amount);
           const origCur = m ? m[2] : from.currency;

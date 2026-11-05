@@ -59,7 +59,7 @@ function headerBlock(lines, i) {
   return head
 }
 
-const AMOUNT = /^[-−+]?\(?\d{1,3}([ ., ]?\d{3})*([.,]\d{1,2})\)?(\s*(MDL|EUR|USD|lei))?$/i
+const AMOUNT = /^[-−+]?\(?\d{1,3}([ ., ]?\d{3})*([.,]\d{1,2})\)?(\s*(MDL|EUR|USD|RON|lei))?$/i
 
 export function pdfTable(items) {
   const lines = pdfLines(items)

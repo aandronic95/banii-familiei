@@ -104,7 +104,7 @@ async function refreshRates(today: string) {
 
 async function latestRates(): Promise<Record<string, number>> {
   const out: Record<string, number> = { MDL: 1 };
-  for (const cur of ["EUR", "USD"]) {
+  for (const cur of ["EUR", "USD", "RON"]) {
     const { data } = await db.from("rates").select("rate").eq("currency", cur).order("date", { ascending: false }).limit(1);
     if (data?.[0]) out[cur] = Number(data[0].rate);
   }
@@ -337,7 +337,7 @@ async function weekly(today: string) {
 const rate4 = (n: number) => n.toFixed(4).replace(".", ",");
 async function fxAlerts(today: string) {
   const prevOf: Record<string, number> = {}, nowOf: Record<string, number> = {};
-  for (const cur of ["EUR", "USD"]) {
+  for (const cur of ["EUR", "USD", "RON"]) {
     const { data } = await db.from("rates").select("date, rate").eq("currency", cur).lte("date", today).order("date", { ascending: false }).limit(2);
     if (data?.[0]?.date === today && data[1]) { nowOf[cur] = Number(data[0].rate); prevOf[cur] = Number(data[1].rate); }
   }

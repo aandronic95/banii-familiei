@@ -73,7 +73,7 @@ function addExpense() {
       </div>
       <div class="grid2">
         <div class="fld"><span class="lbl">{{ t('currency') }}</span>
-          <div class="seg" style="grid-template-columns: repeat(3, minmax(0, 1fr));"><button v-for="c in ['EUR', 'USD', 'MDL']" :key="c" type="button" :class="{ on: edit.currency === c }" @click="edit.currency = c">{{ c }}</button></div></div>
+          <div class="seg" style="grid-template-columns: repeat(4, minmax(0, 1fr));"><button v-for="c in ['EUR', 'RON', 'USD', 'MDL']" :key="c" type="button" :class="{ on: edit.currency === c }" @click="edit.currency = c">{{ c }}</button></div></div>
         <div class="fld"><label for="tr-p">{{ t('tripPeople') }}</label><input id="tr-p" v-model.number="edit.people" type="number" min="1" max="20" class="inp"></div>
       </div>
       <div class="fld"><label for="tr-b">{{ t('tripBudget') }}, {{ edit.currency }}</label><input id="tr-b" v-model="edit.budget" class="inp" inputmode="decimal" :placeholder="planSum ? money0(planSum) : t('tripBudgetPh')"></div>

@@ -1,4 +1,5 @@
 <script setup>
+import { CURRENCIES, FX } from '../lib/currencies.js'
 import { reactive, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, me, save, remove, activeAccounts, balances, goalProgress } from '../store.js'
@@ -82,7 +83,7 @@ async function del() { if (await confirmDialog(t('delete') + '?')) { await remov
     <div class="fld"><label for="g-n">{{ t('name') }}</label><input id="g-n" v-model="f.name" class="inp" maxlength="40" placeholder="Vacanță la mare"></div>
     <div class="grid2">
       <div class="fld"><label for="g-t">{{ t('goalTarget') }}</label><input id="g-t" v-model="f.target" class="inp" inputmode="decimal"></div>
-      <div class="fld"><label for="g-c">{{ t('currency') }}</label><select id="g-c" v-model="f.currency" class="inp"><option>MDL</option><option>EUR</option><option>USD</option></select></div>
+      <div class="fld"><label for="g-c">{{ t('currency') }}</label><select id="g-c" v-model="f.currency" class="inp"><option v-for="c in CURRENCIES" :key="c">{{ c }}</option></select></div>
     </div>
     <div class="fld">
       <label for="g-acc">{{ t('goalAccount') }}</label>
