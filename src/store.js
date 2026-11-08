@@ -17,6 +17,7 @@ import { CURRENCIES, FX } from './lib/currencies.js'
 import { priceIndex } from './lib/prices.js'
 import { demoData, demoClient } from './lib/demo.js'
 import { classifyDebt, samePerson } from './lib/debtparse.js'
+import { salaryPlan, isSalaryTx } from './lib/salary.js'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -1210,3 +1211,23 @@ export async function convertToDebt(tx, cls) {
 // Cheltuieli/venituri care par datorii (pentru verificarea datelor)
 export const debtLike = computed(() => S.transactions.filter((x) => (x.kind === 'expense' || x.kind === 'income') && !x.debt_id && !x.loan_id && !x.investment_id && !x._pending)
   .map((x) => ({ tx: x, cls: classifyDebt(x.kind, [x.merchant, x.note].filter(Boolean).join(' ')) })).filter((x) => x.cls))
+
+// ───────────── Împărțirea salariului ─────────────
+// Salariul venit în ultimele 3 zile, încă neîmpărțit (cardul de pe Acasă dispare după „Gata”)
+export const salaryToSplit = computed(() => {
+  const since = addDaysISO(todayISO(), -3)
+  const done = me.value?.prefs?.salaryDone || []
+  const recName = (id) => S.recurring.find((r) => r.id === id)?.name
+  return S.transactions.filter((x) => x.date >= since && !done.includes(x.id) && isSalaryTx({ ...x, mdl: toMdl(Number(x.amount), txCurrency(x)) }, categoryById(x.category_id)?.icon, recName(x.recurring_id)))
+    .sort((a, b) => b.date.localeCompare(a.date))[0] || null
+})
+// Planul pentru un salariu: plățile până la următorul salariu (sau 30 de zile), economiile, restul pe zi
+export function salarySplit(tx, savePct) {
+  const today = todayISO()
+  const nxt = nextSalary.value?.next_date
+  const until = nxt && nxt > today ? nxt : addDaysISO(today, 30)
+  const obligations = upcoming(today, addDaysISO(until, -1)).filter((e) => e.amount && e.sign < 0)
+    .map((e) => ({ date: e.date, name: e.title, amount: toMdl(Number(e.amount), e.currency || 'MDL') }))
+  const days = Math.max(1, Math.round((Date.parse(until) - Date.parse(today)) / 86400000))
+  return { ...salaryPlan(toMdl(Number(tx.amount), txCurrency(tx)), obligations, savePct, days), until }
+}

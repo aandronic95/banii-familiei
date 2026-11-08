@@ -738,3 +738,45 @@ test('anunțul versiunii noi: doar schimbările de după ultimul anunț', { skip
   const t = releaseText([{ sha: 'c3', title: 'Moneda RON: conturi' }], 'ro')
   assert.match(t, /^🆕 Aplicația s-a actualizat\. Ce e nou:\n• Moneda RON: conturi\n/)
 })
+
+const al2 = await import('../supabase/functions/_shared/alerts2.ts').catch((e) => { console.error(e); return null })
+test('alerte: peste obișnuit, sold mic, suma scrisă de om', { skip: !al2 }, () => {
+  const { paceAlerts, lowBalance, parseMoney } = al2
+  const r = paceAlerts({ food: 7600, car: 900, fun: 50 }, { food: [7400, 7500, 7450], car: [3000, 2800, 0], fun: [100, 0, 0] }, 14, 30)
+  assert.deepEqual(r.map((x) => [x.cat, Math.round(x.usual), x.daysLeft]), [['food', 7450, 16]])
+  assert.deepEqual(paceAlerts({ food: 9000 }, { food: [7400, 7500] }, 27, 30), [])
+  const lb = lowBalance([{ name: 'Rata', amount: 6367, accountId: 'a' }, { name: 'Internet', amount: 250, accountId: 'b' }], { a: 4200, b: 900 })
+  assert.deepEqual(lb, [{ accountId: 'a', total: 6367, names: ['Rata'], balance: 4200 }])
+  assert.deepEqual(['1 230', '1230.5', '1.230,50', '1,230.50', 'abc', '12,3'].map(parseMoney), [1230, 1230.5, 1230.5, 1230.5, null, 12.3])
+})
+
+test('împărțirea salariului', async () => {
+  const { salaryPlan, isSalaryTx } = await import('../src/lib/salary.js')
+  const p = salaryPlan(18806, [{ date: '2026-11-24', name: 'Credit', amount: 6367 }, { date: '2026-11-15', name: 'Gaz', amount: 1800 }], 10, 27)
+  assert.deepEqual([p.bills, p.save, p.rest, p.perDay, p.list[0].name], [8167, 1881, 8758, 324, 'Gaz'])
+  assert.equal(salaryPlan(5000, [{ date: 'x', name: 'Rata', amount: 6000 }], 10, 30).short, 1500)
+  assert.ok(isSalaryTx({ kind: 'income', amount: 18806, merchant: 'Salariu' }))
+  assert.ok(isSalaryTx({ kind: 'income', amount: 9000 }, 'wallet'))
+  assert.ok(!isSalaryTx({ kind: 'income', amount: 500, merchant: 'Salariu' }))
+  assert.ok(!isSalaryTx({ kind: 'income', amount: 5000, merchant: 'intors datorie' }))
+  const fs = await import('node:fs')
+  const a = fs.readFileSync(new URL('../src/lib/salary.js', import.meta.url), 'utf8')
+  const b = fs.readFileSync(new URL('../supabase/functions/_shared/salary.ts', import.meta.url), 'utf8')
+  assert.equal(b.split('\n').slice(1).join('\n'), a)
+})
+
+const icalTs = await import('../supabase/functions/_shared/ical.ts').catch((e) => { console.error(e); return null })
+test('calendarul .ics: evenimente pe zi întreagă, anual, rânduri scurte', { skip: !icalTs }, () => {
+  const { buildIcs } = icalTs
+  const s = buildIcs('Banii familiei', [
+    { uid: 'loan-1-3', date: '2026-11-24', title: '💳 Credit ipotecar — 6 366,97 MDL', note: 'Rata: rata 3', alarm: true },
+    { uid: 'event-9', date: '1962-11-14', title: '🎂 Mama (🎁 800 MDL), cu virgulă; și punct și virgulă', yearly: true },
+  ], '20261108T120000Z')
+  assert.match(s, /^BEGIN:VCALENDAR\r\n/)
+  assert.match(s, /DTSTART;VALUE=DATE:20261124\r\nDTEND;VALUE=DATE:20261125/)
+  assert.match(s, /RRULE:FREQ=YEARLY/)
+  assert.match(s, /TRIGGER:-PT15H/)
+  assert.ok(s.includes('\\, cu virgulă\;') || s.replace(/\r\n /g, '').includes('\\, cu virgulă\;'))
+  for (const line of s.split('\r\n')) assert.ok(new TextEncoder().encode(line).length <= 75, line)
+  assert.ok(s.endsWith('END:VCALENDAR\r\n'))
+})

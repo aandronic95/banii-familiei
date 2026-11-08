@@ -218,3 +218,5 @@ jobs:
           AL=$(curl -s -o /tmp/al -w '%{http_code}' -X POST "$BASE/alert" -H 'content-type: application/json' -d '{"id":"00000000-0000-0000-0000-000000000000"}')
           echo "alert fără login: $AL"
           [ "$AL" = "401" ] || { echo "::error::alert trebuia să ceară login (401), a răspuns $AL"; exit 1; }
+          IC=$(curl -s -o /dev/null -w "%{http_code}" "$BASE/ics?k=$(printf '0%.0s' $(seq 1 64))")
+          [ "$IC" = "404" ] || { echo "::error::calendarul trebuia să refuze un cod greșit (404), a răspuns $IC"; exit 1; }

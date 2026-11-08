@@ -1,4 +1,5 @@
 <script setup>
+import SalarySplit from '../components/SalarySplit.vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { S, me, isOwner, savePrefs, todayTasks, shoppingLeft, completeTask, reopenTask, memberById, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary, pendingRecurring, confirmRecurring, advanceRecurring, recDue, pendingPayouts, confirmPayout, advancePayout, convertTo } from '../store.js'
@@ -167,6 +168,8 @@ async function paySkip(p) {
         <span style="margin-left: auto;">{{ t('livePerDay', money(growth.perDay)) }}</span>
       </div>
     </button>
+
+    <SalarySplit />
 
     <section v-if="pendingRecurring.length || pendingPayouts.length" class="bf-card stack" aria-labelledby="recq-h">
       <h2 id="recq-h" class="h-sec">{{ t('recConfirmTitle') }}</h2>

@@ -6,6 +6,7 @@ import { normalizeSpoken, transcribe, voiceConfig } from "../_shared/voice.ts";
 import { advance, confirmRec, RT } from "../_shared/recurring.ts";
 import { addPayout, advancePay, nextDue, PT } from "../_shared/payouts.ts";
 import { classifyDebt, convertDebt, debtLine, undoDebt } from "../_shared/debts.ts";
+import { AT, parseMoney } from "../_shared/alerts2.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { accountChoices, accountKeyboard, convertAmount, parseQuick, pickAccount } from "../_shared/quick.ts";
@@ -118,6 +119,16 @@ Deno.serve(async (req) => {
     const member = await memberByTelegram(cb.from.id);
     const ru = member?.lang === "ru";
     const [action, id] = String(cb.data).split(":");
+    // ── Verificarea cash-ului: cok (corect) / cfx (altă sumă → răspuns la mesaj) ──
+    if (member && (action === "cok" || action === "cfx") && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
+      const lg = ru ? "ru" : "ro";
+      const { data: acc } = await db.from("accounts").select("id, name").eq("id", id).eq("family_id", member.family_id).maybeSingle();
+      await tg(BOT_TOKEN, "answerCallbackQuery", { callback_query_id: cb.id, text: action === "cok" ? "👍" : "✏️" });
+      if (cb.message) await tg(BOT_TOKEN, "editMessageReplyMarkup", { chat_id: cb.message.chat.id, message_id: cb.message.message_id, reply_markup: { inline_keyboard: [] } });
+      if (acc && action === "cok") await tg(BOT_TOKEN, "sendMessage", { chat_id: cb.from.id, text: AT[lg].cashGood });
+      if (acc && action === "cfx") await tg(BOT_TOKEN, "sendMessage", { chat_id: cb.from.id, text: AT[lg].cashPrompt(acc.name), reply_markup: { force_reply: true, input_field_placeholder: "1230" } });
+      return ok();
+    }
     // ── Dobândă / rată de la o investiție: pok (da) / pno (încă nu) / psk (sari) ──
     if (member && ["pok", "pno", "psk"].includes(action) && /^[0-9a-f-]{36}$/i.test(id ?? "")) {
       const date = String(cb.data).split(":")[2] ?? "";
@@ -316,6 +327,27 @@ Deno.serve(async (req) => {
   if (text.startsWith("/")) return ok();
   if (!member) {
     await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: ru ? "У вас нет доступа к семейному бюджету." : "Nu ai acces la bugetul familiei." });
+    return ok();
+  }
+
+  // ── Răspuns la „Scrie cât e de fapt în «Portofel»”: corectăm soldul cu diferența ──
+  const replied = String(msg.reply_to_message?.text ?? "");
+  if (msg.reply_to_message?.from?.is_bot && replied.startsWith("💵")) {
+    const lgc = ru ? "ru" : "ro";
+    const name = replied.match(/«([^»]+)»/)?.[1];
+    const { data: accs } = await db.from("accounts").select("id, name, currency").eq("family_id", member.family_id).eq("type", "cash").eq("archived", false);
+    const acc = (accs ?? []).find((a) => a.name === name);
+    const actual = parseMoney(text);
+    if (!acc || actual === null) { await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: AT[lgc].cashBad }); return ok(); }
+    const { data: b } = await db.from("account_balances").select("balance").eq("account_id", acc.id).maybeSingle();
+    const diff = Math.round((actual - Number(b?.balance ?? 0)) * 100) / 100;
+    if (Math.abs(diff) < 0.01) { await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: AT[lgc].cashSame(actual, acc.currency) }); return ok(); }
+    const { data: tx } = await db.from("transactions").insert({
+      family_id: member.family_id, kind: diff < 0 ? "expense" : "income", amount: Math.abs(diff), account_id: acc.id, category_id: null,
+      member_id: member.id, date: todayLocal(), merchant: AT[lgc].fixName, note: AT[lgc].fixNote,
+    }).select("id").single();
+    await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: AT[lgc].cashDone(diff, acc.currency, actual),
+      reply_markup: tx ? { inline_keyboard: [[{ text: ru ? "Изменить" : "Modifică", web_app: { url: `${APP_URL}?tx=${tx.id}` } }, { text: ru ? "Отменить" : "Anulează", callback_data: `del:${tx.id}` }]] } : undefined });
     return ok();
   }
 

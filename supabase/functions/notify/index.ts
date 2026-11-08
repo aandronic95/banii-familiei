@@ -2,12 +2,14 @@
 // Notificări programate (rulate zilnic și săptămânal din GitHub Actions) + actualizare curs BNM.
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
-import { loanForRecurring, nextOccurrence, nextUnpaid } from "../_shared/loan.ts";
+import { loanForRecurring, nextOccurrence, nextUnpaid, schedule } from "../_shared/loan.ts";
+import { isSalaryTx, salaryPlan } from "../_shared/salary.ts";
 import { ratesFor } from "../_shared/bnm.ts";
 import { weeklyText, type WeekTx } from "../_shared/weekly.ts";
 import { advance, askKeyboard, dueDate, RT } from "../_shared/recurring.ts";
 import { addPayout, convert, payKeyboard, PT } from "../_shared/payouts.ts";
 import { behindText, type Commit, newCommits, releaseText, UPSTREAM } from "../_shared/release.ts";
+import { AT, lowBalance, paceAlerts } from "../_shared/alerts2.ts";
 import { accruedInterest, couponDates, duePayouts } from "../_shared/invest.ts";
 import { nextEventDate, turning } from "../_shared/home.ts";
 import { nowLocalHM, taskButtons, taskLine, T as TT } from "../_shared/tasks.ts";
@@ -179,6 +181,7 @@ async function releaseDaily(today: string) {
 async function daily(today: string) {
   await refreshRates(today);
   await releaseDaily(today).catch((e) => console.error("versiune", e));
+  await salaryNotice(today).catch((e) => console.error("salariu", e));
   const rates = await latestRates();
   const toMdl = (a: number, cur: string) => a * (rates[cur] ?? 1);
   const month = today.slice(0, 7);
@@ -280,6 +283,55 @@ async function daily(today: string) {
       const d = daysBetween(today, next.due);
       if ((d === 3 || d === 0) && (await once(`loan:${l.id}:${next.n}:${d}`))) {
         await send(members, "loans", (lg) => T[lg].loan(l.name, fmt(next.payment), l.currency, d, next.due.split("-").reverse().join(".")));
+      }
+    }
+
+    // Sold mic înainte de plată: ratele și plățile recurente de mâine, față de soldul contului lor
+    {
+      const tomorrow = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10);
+      const dues: { name: string; amount: number; accountId: string }[] = [];
+      for (const r of recs ?? []) {
+        if (r.kind === "expense" && r.active && r.account_id && dueDate(r) === tomorrow && !loanForRecurring(r, openLoans ?? [], r.next_date)) dues.push({ name: r.name, amount: Number(r.amount), accountId: r.account_id });
+      }
+      for (const l of loans ?? []) {
+        if (!l.account_id) continue;
+        const { data: pays } = await db.from("loan_payments").select("n").eq("loan_id", l.id);
+        const nx = nextUnpaid(l, (pays ?? []).map((p) => p.n));
+        if (nx && nx.due === tomorrow) dues.push({ name: l.name, amount: nx.payment, accountId: l.account_id });
+      }
+      if (dues.length) {
+        const { data: bals } = await db.from("account_balances").select("account_id, balance").in("account_id", [...new Set(dues.map((d) => d.accountId))]);
+        const balances = Object.fromEntries((bals ?? []).map((b) => [b.account_id, Number(b.balance)]));
+        for (const lb of lowBalance(dues, balances)) {
+          const acc = (famAccs ?? []).find((a) => a.id === lb.accountId);
+          if (acc && (await once(`lowbal:${lb.accountId}:${tomorrow}`))) {
+            await send(members, "lowbal", (lg) => AT[lg].low(acc.name ?? "", lb.balance, lb.total, acc.currency, lb.names));
+          }
+        }
+      }
+    }
+
+    // Peste obișnuit la mijloc de lună: categoria care a ajuns deja la cât se cheltuie de obicei pe toată luna
+    {
+      const d0 = new Date(Date.parse(month + "-01") - 1);
+      const from3 = new Date(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() - 2, 1)).toISOString().slice(0, 10);
+      const { data: ctx } = await db.from("transactions").select("amount, date, category_id, accounts!transactions_account_id_fkey(currency), categories(name_ro, name_ru)")
+        .eq("family_id", f.id).eq("kind", "expense").gte("date", from3).lte("date", today).not("category_id", "is", null);
+      const spent: Record<string, number> = {}, past: Record<string, number[]> = {}, names: Record<string, { ro: string; ru: string }> = {};
+      const months = [0, 1, 2].map((k) => new Date(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() - k, 1)).toISOString().slice(0, 7));
+      // deno-lint-ignore no-explicit-any
+      for (const t of (ctx ?? []) as any[]) {
+        const v = toMdl(Number(t.amount), t.accounts?.currency ?? "MDL");
+        names[t.category_id] = { ro: t.categories?.name_ro ?? "", ru: t.categories?.name_ru ?? t.categories?.name_ro ?? "" };
+        if (t.date.startsWith(month)) spent[t.category_id] = (spent[t.category_id] ?? 0) + v;
+        else { const i = months.indexOf(t.date.slice(0, 7)); if (i >= 0) { past[t.category_id] ??= [0, 0, 0]; past[t.category_id][i] += v; } }
+      }
+      const day = Number(today.slice(8, 10));
+      const dim = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+      for (const p of paceAlerts(spent, past, day, dim).slice(0, 2)) {
+        if (await once(`pace:${f.id}:${p.cat}:${month}`)) {
+          await send(members, "pace", (lg) => AT[lg].pace(lg === "ru" ? names[p.cat].ru : names[p.cat].ro, p.spent, p.usual, p.daysLeft));
+        }
       }
     }
 
@@ -396,6 +448,23 @@ async function weekly(today: string) {
 
     const input = { from, to: today, cur: rows.filter((r) => r.date >= from), prev: rows.filter((r) => r.date < from), total, trip };
     await send(members, "weekly", (lg) => weeklyText(input, lg));
+
+    // Verificarea cash-ului: pentru fiecare portofel, întrebăm dacă suma din aplicație e cea reală
+    const { data: cashAccs } = await db.from("accounts").select("id, name, currency, member_id").eq("family_id", f.id).eq("type", "cash").eq("archived", false);
+    if (cashAccs?.length) {
+      const { data: bals } = await db.from("account_balances").select("account_id, balance").in("account_id", cashAccs.map((a) => a.id));
+      const { data: memIds } = await db.from("members").select("id, telegram_id, lang, notify").eq("family_id", f.id).in("role", ["owner", "editor"]).not("telegram_id", "is", null);
+      for (const a of cashAccs) {
+        const bal = Number((bals ?? []).find((b) => b.account_id === a.id)?.balance ?? 0);
+        const owner = (memIds ?? []).find((m) => m.id === a.member_id);
+        for (const m of owner ? [owner] : memIds ?? []) {
+          if (m.notify?.cash === false) continue;
+          const lg = m.lang === "ru" ? "ru" : "ro";
+          await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id, text: AT[lg].cashAsk(a.name, bal, a.currency),
+            reply_markup: { inline_keyboard: [[{ text: AT[lg].cashOk, callback_data: `cok:${a.id}` }, { text: AT[lg].cashFix, callback_data: `cfx:${a.id}` }]] } });
+        }
+      }
+    }
   }
 }
 
@@ -429,7 +498,72 @@ async function fxAlerts(today: string) {
 // Rezumatul de seară vine doar între 20:30 și 23:59 ora Chișinăului; mai târziu ar fi despre ziua greșită
 export const eveningWindow = (hm: string) => hm >= "20:30" && hm <= "23:59";
 
+// ───────────── Împărțirea salariului (mesaj în bot când vine salariul) ─────────────
+const SAL = {
+  ro: (p: Any, until: string, names: string) => `💼 A venit salariul: +${fmt(p.salary)} lei.\n` +
+    `Plăți până la ${until}: ${fmt(p.bills)}${names ? ` (${names})` : ""}\n` +
+    (p.save ? `Pune deoparte ${fmt(p.save)}\n` : "") +
+    (p.rest > 0 ? `Rămân ${fmt(p.rest)} → ≈ ${fmt(p.perDay)} lei pe zi, ${p.days} zile.` : `Plățile depășesc salariul cu ${fmt(p.short)} lei.`) +
+    `\nÎn aplicație (Acasă) muți economiile dintr-o atingere.`,
+  ru: (p: Any, until: string, names: string) => `💼 Пришла зарплата: +${fmt(p.salary)} лей.\n` +
+    `Платежи до ${until}: ${fmt(p.bills)}${names ? ` (${names})` : ""}\n` +
+    (p.save ? `Отложить ${fmt(p.save)}\n` : "") +
+    (p.rest > 0 ? `Остаётся ${fmt(p.rest)} → ≈ ${fmt(p.perDay)} лей в день, ${p.days} дн.` : `Платежи больше зарплаты на ${fmt(p.short)} лей.`) +
+    `\nВ приложении (Главная) накопления переводятся одним нажатием.`,
+};
+// deno-lint-ignore no-explicit-any
+type Any = any;
+async function salaryNotice(today: string) {
+  const rates = await latestRates();
+  const toMdl = (a: number, cur: string) => a * (rates[cur] ?? 1);
+  const since = new Date(Date.parse(today) - 2 * 86400000).toISOString().slice(0, 10);
+  const { data: families } = await db.from("families").select("id");
+  for (const f of families ?? []) {
+    const { data: txs } = await db.from("transactions").select("id, kind, amount, merchant, note, date, recurring_id, accounts!transactions_account_id_fkey(currency), categories(icon)")
+      .eq("family_id", f.id).eq("kind", "income").gte("date", since).lte("date", today);
+    const { data: recs } = await db.from("recurring").select("*").eq("family_id", f.id).eq("active", true);
+    const recName = (id: string | null) => (recs ?? []).find((r) => r.id === id)?.name;
+    // deno-lint-ignore no-explicit-any
+    const sal = ((txs ?? []) as any[]).map((t) => ({ ...t, mdl: toMdl(Number(t.amount), t.accounts?.currency ?? "MDL") }))
+      .find((t) => isSalaryTx(t, t.categories?.icon, recName(t.recurring_id)));
+    if (!sal || !(await once(`salary:${sal.id}`))) continue;
+    // următorul salariu: plata recurentă „salariu”, altfel peste 30 de zile
+    const salRec = (recs ?? []).filter((r) => r.kind === "income" && /salar|зарплат/i.test(r.name)).map((r) => dueDate(r)).filter((d) => d > today).sort()[0];
+    const until = salRec ?? new Date(Date.parse(today) + 30 * 86400000).toISOString().slice(0, 10);
+    const obligations: { date: string; name: string; amount: number }[] = [];
+    const { data: accs } = await db.from("accounts").select("id, currency").eq("family_id", f.id);
+    const curOf = (id: string | null) => (accs ?? []).find((a) => a.id === id)?.currency ?? "MDL";
+    const { data: loans } = await db.from("loans").select("*").eq("family_id", f.id).eq("closed", false);
+    for (const r of recs ?? []) {
+      if (r.kind !== "expense") continue;
+      let d = r.next_date, g = 0;
+      while (dueDate(r, d) < until && g++ < 40) {
+        if (dueDate(r, d) >= today && !loanForRecurring(r, loans ?? [], d)) obligations.push({ date: dueDate(r, d), name: r.name, amount: toMdl(Number(r.amount), curOf(r.account_id)) });
+        d = nextOccurrence(d, r.every_months, r.day_of_month);
+      }
+    }
+    for (const l of loans ?? []) {
+      const { data: pays } = await db.from("loan_payments").select("n").eq("loan_id", l.id);
+      const paid = new Set((pays ?? []).map((p) => p.n));
+      for (const x of schedule(l)) if (!paid.has(x.n) && x.due >= today && x.due < until) obligations.push({ date: x.due, name: l.name, amount: toMdl(x.payment, l.currency) });
+    }
+    const { data: mem } = await db.from("members").select("telegram_id, lang, notify, prefs, role").eq("family_id", f.id).in("role", ["owner", "editor"]).not("telegram_id", "is", null);
+    const owner = (mem ?? []).find((m) => m.role === "owner");
+    const pct = Number(owner?.prefs?.salary?.pct ?? 10);
+    const days = Math.max(1, Math.round((Date.parse(until) - Date.parse(today)) / 86400000));
+    const plan = salaryPlan(sal.mdl, obligations, pct, days);
+    const names = [...new Set(plan.list.map((o: Any) => o.name))].slice(0, 4).join(", ");
+    const untilTxt = until.split("-").reverse().join(".");
+    for (const m of mem ?? []) {
+      if (m.notify?.salary === false) continue;
+      const lg = m.lang === "ru" ? "ru" : "ro";
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id, text: SAL[lg](plan, untilTxt, names), reply_markup: { inline_keyboard: [[{ text: T[lg].open, web_app: { url: APP_URL } }]] } });
+    }
+  }
+}
+
 async function evening(today: string) {
+  await salaryNotice(today).catch((e) => console.error("salariu", e));
   if (!eveningWindow(nowLocalHM())) return;
   const rates = await latestRates();
   const toMdl = (a: number, cur: string) => a * (rates[cur] ?? 1);
@@ -628,7 +762,7 @@ Deno.serve(async (req) => {
   if (task === "weekly") await weekly(today);
   else if (task === "monthly") await monthly(today);
   else if (task === "evening") await evening(today);
-  else if (task === "remind") await tasksRemind(today);
+  else if (task === "remind") { await tasksRemind(today); await salaryNotice(today).catch((e) => console.error("salariu", e)); }
   else {
     await daily(today);
     await fxAlerts(today).catch((e) => console.error("fx", e));

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calendarul plăților</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 17px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: 32px 20px; background: #f2f2ef; color: #1a2420; }
+  @media (prefers-color-scheme: dark) { body { background: #111714; color: #e8efe9; } a.b { background: #3dbb8a; color: #08130e; } }
+  main { max-width: 440px; margin: 0 auto; display: grid; gap: 16px; }
+  a.b { display: block; text-align: center; padding: 14px; border-radius: 14px; background: #0f6b4c; color: #fff; text-decoration: none; font-weight: 600; }
+  p { margin: 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1 style="margin:0;font-size:24px">📅 Calendarul plăților</h1>
+  <p id="t">Se deschide calendarul telefonului pentru abonare…</p>
+  <a id="go" class="b" href="#">Abonează-te în Calendar</a>
+  <p style="opacity:.7;font-size:15px">Pe iPhone apare „Abonează-te la calendar” — apasă „Abonează-te”, apoi „Adaugă”. Calendarul se actualizează singur.</p>
+</main>
+<script>
+  // Telegram deschide doar linkuri https; pagina asta trimite mai departe la webcal:// (abonare în calendar).
+  // Doar adrese de funcții Supabase, ca pagina să nu poată fi folosită pentru alte redirecționări.
+  var u = new URLSearchParams(location.search).get('u') || '';
+  var ok = /^webcal:\/\/[a-z0-9]+\.supabase\.co\/functions\/v1\/ics\?k=[0-9a-f]{32,64}$/.test(u);
+  if (ok) { document.getElementById('go').href = u; location.href = u; }
+  else { document.getElementById('t').textContent = 'Linkul nu e valid. Deschide-l din aplicație.'; document.getElementById('go').remove(); }
+</script>
+</body>
+</html>
