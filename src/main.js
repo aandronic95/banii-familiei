@@ -44,6 +44,8 @@ const routes = [
   { path: '/templates', name: 'templates', component: () => import('./views/Templates.vue') },
   { path: '/restore', name: 'restore', component: () => import('./views/Restore.vue'), meta: { form: true } },
   { path: '/history', name: 'history', component: () => import('./views/History.vue') },
+  { path: '/trash', name: 'trash', component: () => import('./views/History.vue') },
+  { path: '/close', name: 'close', component: () => import('./views/MonthClose.vue') },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 

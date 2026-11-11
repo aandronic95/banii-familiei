@@ -18,6 +18,8 @@ import { priceIndex } from './lib/prices.js'
 import { demoData, demoClient } from './lib/demo.js'
 import { classifyDebt, samePerson } from './lib/debtparse.js'
 import { salaryPlan, isSalaryTx } from './lib/salary.js'
+import { monthCompare, suggestCategories } from './lib/monthly.js'
+import { guessCategoryIcon } from '../supabase/functions/_shared/wallet.ts'
 
 export const S = reactive({
   status: 'loading', // loading | ready | not_telegram | not_allowed | invite_bad | error
@@ -54,7 +56,7 @@ export const S = reactive({
   demo: false,      // familie inventată, nimic nu se salvează
 })
 
-const TABLES = {
+export const TABLES = {
   accounts: 'accounts', categories: 'categories', transactions: 'transactions', loans: 'loans',
   loan_payments: 'loanPayments', cars: 'cars', car_events: 'carEvents', members: 'members', investments: 'investments', recurring: 'recurring', debts: 'debts', goals: 'goals', templates: 'templates',
   tasks: 'tasks', task_comments: 'taskComments', shopping_items: 'shopping',
@@ -1230,4 +1232,29 @@ export function salarySplit(tx, savePct) {
     .map((e) => ({ date: e.date, name: e.title, amount: toMdl(Number(e.amount), e.currency || 'MDL') }))
   const days = Math.max(1, Math.round((Date.parse(until) - Date.parse(today)) / 86400000))
   return { ...salaryPlan(toMdl(Number(tx.amount), txCurrency(tx)), obligations, savePct, days), until }
+}
+
+// ───────────── Luna asta față de trecuta · categorii propuse · corectarea soldului ─────────────
+export const monthCmp = computed(() => monthCompare(
+  S.transactions.filter((x) => x.kind === 'expense').map((x) => ({ date: x.date, category_id: x.category_id, mdl: toMdl(Number(x.amount), txCurrency(x)) })), todayISO()))
+// Tranzacții fără categorie pentru care știm ce să propunem (după același magazin, altfel după cuvinte)
+export const catSuggestions = computed(() => {
+  const plain = (x) => (x.kind === 'expense' || x.kind === 'income') && !x.debt_id && !x.loan_id && !x._pending
+  const uncat = S.transactions.filter((x) => plain(x) && !x.category_id)
+  if (!uncat.length) return []
+  const byIcon = (text, kind) => {
+    const icon = kind === 'expense' ? guessCategoryIcon(text) : null
+    return icon ? S.categories.find((c) => c.kind === 'expense' && c.icon === icon && !c.archived)?.id || null : null
+  }
+  const live = new Set(S.categories.filter((c) => !c.archived).map((c) => c.id))
+  return suggestCategories(uncat, S.transactions.filter((x) => plain(x) && x.category_id && live.has(x.category_id)), byIcon)
+})
+export const uncategorized = computed(() => S.transactions.filter((x) => x.kind === 'expense' && !x.category_id && !x.debt_id && !x.loan_id))
+// „Banca arată X”: diferența față de aplicație se trece ca o corectare (fără categorie), ca soldul să fie cel real
+export async function adjustBalance(acc, actual) {
+  const diff = Math.round((Number(actual) - (balances.value[acc.id] ?? 0)) * 100) / 100
+  if (Math.abs(diff) < 0.005) return 0
+  await save('transactions', { kind: diff < 0 ? 'expense' : 'income', amount: Math.abs(diff), account_id: acc.id, category_id: null, member_id: me.value?.id || null,
+    date: todayISO(), merchant: tr('fixName'), note: tr('fixNote') })
+  return diff
 }

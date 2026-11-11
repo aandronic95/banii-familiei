@@ -42,7 +42,7 @@ async function saveBig() {
   await saveNotify()
   toast(v ? t('bigOn', money0(v)) : t('bigOff'))
 }
-const notify = reactive({ events: true, meters: true, tasks: true, evening: true, loans: true, budget: true, weekly: true, car: true, invest: true, recurring: true, debts: true, monthly: true, backup: false, updates: true, pace: true, lowbal: true, cash: true, salary: true, ...(me.value?.notify || {}) })
+const notify = reactive({ events: true, meters: true, tasks: true, evening: true, loans: true, budget: true, weekly: true, car: true, invest: true, recurring: true, debts: true, monthly: true, backup: false, updates: true, pace: true, lowbal: true, cash: true, salary: true, allowance: true, ...(me.value?.notify || {}) })
 
 // Blocare: cod de rezervă obligatoriu + Face ID, dacă telefonul îl are
 const lockOn = ref(isLockEnabled())
@@ -173,7 +173,9 @@ const links = computed(() => [
   { to: '/apple-pay', icon: 'card', title: t('apTitle'), sub: t('apMenuSub') },
   { to: '/import', icon: 'list', title: t('importTitle'), sub: t('importSub') },
   { to: '/family', icon: 'users', title: t('family'), sub: S.members.map((m) => m.name).join(', ') },
+  { to: '/close', icon: 'check', title: t('clTitle'), sub: t('clSub') },
   { to: '/history', icon: 'clock', title: t('histTitle'), sub: t('histSub') },
+  { to: '/trash', icon: 'trash', title: t('trashTitle'), sub: t('trashSub') },
   { to: '/restore', icon: 'upload', title: t('rsTitle'), sub: t('rsSub') },
   S.demo ? { to: '#exit', icon: 'eye', title: t('demoExit'), sub: t('demoBar') } : { to: '#demo', icon: 'eye', title: t('demoTitle'), sub: t('demoSub') },
 ])
@@ -191,7 +193,7 @@ async function saveRate(c) {
   const v = parseAmount(rates[c])
   if (v > 0) { await setRate(c, v); toast(t('saved')) }
 }
-const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub'], ['invest', 'nInvest', 'nInvestSub'], ['recurring', 'nRecurring', 'nRecurringSub'], ['debts', 'nDebts', 'nDebtsSub'], ['monthly', 'nMonthly', 'nMonthlySub'], ['backup', 'nBackup', 'nBackupSub'], ['evening', 'nEvening', 'nEveningSub'], ['tasks', 'nTasks', 'nTasksSub'], ['events', 'nEvents', 'nEventsSub'], ['meters', 'nMeters', 'nMetersSub'], ['pace', 'nPace', 'nPaceSub'], ['lowbal', 'nLowbal', 'nLowbalSub'], ['cash', 'nCash', 'nCashSub'], ['salary', 'nSalary', 'nSalarySub'], ['updates', 'nUpdates', 'nUpdatesSub']]
+const items = [['loans', 'nLoans', 'nLoansSub'], ['budget', 'nBudget', 'nBudgetSub'], ['weekly', 'nWeekly', 'nWeeklySub'], ['car', 'nCar', 'nCarSub'], ['invest', 'nInvest', 'nInvestSub'], ['recurring', 'nRecurring', 'nRecurringSub'], ['debts', 'nDebts', 'nDebtsSub'], ['monthly', 'nMonthly', 'nMonthlySub'], ['backup', 'nBackup', 'nBackupSub'], ['evening', 'nEvening', 'nEveningSub'], ['tasks', 'nTasks', 'nTasksSub'], ['events', 'nEvents', 'nEventsSub'], ['meters', 'nMeters', 'nMetersSub'], ['pace', 'nPace', 'nPaceSub'], ['lowbal', 'nLowbal', 'nLowbalSub'], ['cash', 'nCash', 'nCashSub'], ['salary', 'nSalary', 'nSalarySub'], ['allowance', 'nAllowance', 'nAllowanceSub'], ['updates', 'nUpdates', 'nUpdatesSub']]
 </script>
 
 <template>

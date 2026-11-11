@@ -19,12 +19,15 @@ const ICONS = ['piggy', 'home', 'car', 'ticket', 'school', 'heart', 'gift', 'shi
 const f = reactive({
   name: orig?.name ?? '', target: num(orig?.target), currency: orig?.currency ?? 'MDL', account_id: orig?.account_id ?? '',
   saved: num(orig?.saved ?? 0), member_id: orig?.member_id ?? '', deadline: orig?.deadline ?? '', icon: orig?.icon ?? 'piggy', done: orig?.done ?? false,
+  allowance: orig?.allowance ? num(orig.allowance) : '', allowance_weekday: orig?.allowance_weekday ?? 6, allowance_from: orig?.allowance_from ?? '',
 })
 const add = reactive({ open: false, amount: '', from: '' })
 const err = ref('')
 const busy = ref(false)
 const accs = computed(() => activeAccounts.value.filter((a) => a.currency === f.currency))
 const accLabel = (a) => `${a.name} · ${money(balances.value[a.id])} ${a.currency}`
+const isKid = computed(() => S.members.find((m) => m.id === f.member_id)?.kind === 'child')
+const alwAccs = computed(() => activeAccounts.value.filter((a) => a.id !== f.account_id && a.currency === f.currency))
 const fromAccs = computed(() => activeAccounts.value.filter((a) => a.id !== orig?.account_id && a.currency === (orig?.currency || f.currency)))
 
 async function submit() {
@@ -36,6 +39,9 @@ async function submit() {
     await save('goals', {
       ...(orig ? { id: orig.id } : {}), name: f.name.trim(), target, currency: f.currency, account_id: f.account_id || null,
       saved: f.account_id ? 0 : parseAmount(f.saved) || 0, member_id: f.member_id || null, deadline: f.deadline || null, icon: f.icon, done: !!f.done,
+      allowance: parseAmount(f.allowance) > 0 ? parseAmount(f.allowance) : null, allowance_weekday: f.allowance_weekday, allowance_from: f.allowance_from || null,
+      // pornit acum: prima sumă vine la următoarea zi aleasă, nu pentru săptămânile trecute
+      ...(parseAmount(f.allowance) > 0 && !(Number(orig?.allowance) > 0) ? { allowance_last: todayISO() } : {}),
     })
     haptic('success'); toast(t('saved')); router.back()
   } catch (e) { console.error(e); err.value = t('error', e) } finally { busy.value = false }
@@ -91,6 +97,17 @@ async function del() { if (await confirmDialog(t('delete') + '?')) { await remov
       <span class="hint">{{ t('goalAccountHint') }}</span>
     </div>
     <div v-if="!f.account_id" class="fld"><label for="g-s">{{ t('goalSaved') }}</label><input id="g-s" v-model="f.saved" class="inp" inputmode="decimal"></div>
+
+    <div class="bf-card stack">
+      <div class="fld"><label for="g-al">{{ isKid ? t('alwKid') : t('alwAny') }}, {{ f.currency }}</label><input id="g-al" v-model="f.allowance" class="inp" inputmode="decimal" :placeholder="t('alwOff')"></div>
+      <template v-if="parseAmount(f.allowance) > 0">
+        <div class="fld"><span class="lbl">{{ t('alwDay') }}</span>
+          <div class="seg" style="grid-template-columns: repeat(7, minmax(0, 1fr));"><button v-for="d in [1, 2, 3, 4, 5, 6, 0]" :key="d" type="button" :class="{ on: f.allowance_weekday === d }" @click="f.allowance_weekday = d">{{ t('wd' + d) }}</button></div></div>
+        <div class="fld"><label for="g-af">{{ t('alwFrom') }}</label>
+          <select id="g-af" v-model="f.allowance_from" class="inp"><option value="">{{ t('alwFromNone') }}</option><option v-for="a in alwAccs" :key="a.id" :value="a.id">{{ accLabel(a) }}</option></select></div>
+      </template>
+      <p class="hint" style="margin: 0;">{{ t('alwHint') }}</p>
+    </div>
     <div class="grid2">
       <div class="fld"><label for="g-d">{{ t('goalDeadline') }}</label><input id="g-d" v-model="f.deadline" type="date" class="inp"></div>
       <div class="fld">

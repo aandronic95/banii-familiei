@@ -1,9 +1,10 @@
 <script setup>
 import SalarySplit from '../components/SalarySplit.vue'
+import MonthCompare from '../components/MonthCompare.vue'
 import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { S, me, isOwner, savePrefs, todayTasks, shoppingLeft, completeTask, reopenTask, memberById, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary, pendingRecurring, confirmRecurring, advanceRecurring, recDue, pendingPayouts, confirmPayout, advancePayout, convertTo } from '../store.js'
-import { t, catName } from '../lib/i18n.js'
+import { S, me, isOwner, savePrefs, todayTasks, shoppingLeft, completeTask, reopenTask, memberById, totalMdl, debtMdl, growthAt, addFromTemplate, remove, categoryById, accountById, periodSums, monthRange, budgetRows, loanStatuses, nextSalary, pendingRecurring, confirmRecurring, advanceRecurring, recDue, pendingPayouts, confirmPayout, advancePayout, convertTo, uncategorized, debtLike } from '../store.js'
+import { t, catName, lang } from '../lib/i18n.js'
 import { money, money0, monthName, daysUntil, dateShort } from '../lib/format.js'
 import TxRow from '../components/TxRow.vue'
 import BudgetBar from '../components/BudgetBar.vue'
@@ -76,7 +77,7 @@ async function tickTask(x) {
 }
 
 // Ecranul Acasă personalizat (ordinea și ce se vede), salvat pe persoană
-const SECTIONS = ['guide', 'quick', 'templates', 'tasks', 'salary', 'alerts', 'forecast', 'budgets', 'emergency', 'recent']
+const SECTIONS = ['guide', 'quick', 'templates', 'tasks', 'salary', 'alerts', 'compare', 'forecast', 'budgets', 'emergency', 'recent']
 const customize = ref(false)
 const layout = computed(() => {
   const p = me.value?.prefs?.home || {}
@@ -136,6 +137,17 @@ async function paySkip(p) {
   recBusy.value = p.inv.id
   try { await advancePayout(p.inv, p.row.date) } catch (e) { toast(t('error', e)) } finally { recBusy.value = null }
 }
+// Primele 10 zile: luna trecută, dacă n-a închis-o nimeni
+const closeDue = computed(() => {
+  const today = todayISO()
+  if (Number(today.slice(8, 10)) > 10) return null
+  const [y, m] = today.split('-').map(Number)
+  const pm = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`
+  if (S.members.some((x) => (x.prefs?.closedMonths || []).includes(pm))) return null
+  if (!S.transactions.some((x) => x.date.startsWith(pm))) return null
+  const n = uncategorized.value.filter((x) => x.date.startsWith(pm)).length + debtLike.value.length + pendingRecurring.value.length + pendingPayouts.value.length
+  return { n, label: new Date(pm + '-15').toLocaleDateString(lang.value === 'ru' ? 'ru-RU' : 'ro-RO', { month: 'long' }) }
+})
 </script>
 
 <template>
@@ -170,6 +182,9 @@ async function paySkip(p) {
     </button>
 
     <SalarySplit />
+    <button v-if="closeDue" type="button" class="bf-banner" style="border: 0; text-align: left; cursor: pointer; background: var(--surface); box-shadow: var(--shadow-card);" @click="router.push('/close')">
+      <Icon name="check" /><div><b>{{ closeDue.n ? t('clBanner', closeDue.label, closeDue.n) : t('clBanner0', closeDue.label) }}</b><div class="cap">{{ t('clSub') }}</div></div>
+    </button>
 
     <section v-if="pendingRecurring.length || pendingPayouts.length" class="bf-card stack" aria-labelledby="recq-h">
       <h2 id="recq-h" class="h-sec">{{ t('recConfirmTitle') }}</h2>
@@ -274,6 +289,7 @@ async function paySkip(p) {
           </button>
         </div>
       </section>
+      <MonthCompare v-if="key === 'compare'" />
       <ForecastCard v-if="key === 'forecast'" />
       <EmergencyCard v-if="key === 'emergency'" />
     </template>

@@ -7,6 +7,7 @@ import { advance, confirmRec, RT } from "../_shared/recurring.ts";
 import { addPayout, advancePay, nextDue, PT } from "../_shared/payouts.ts";
 import { classifyDebt, convertDebt, debtLine, undoDebt } from "../_shared/debts.ts";
 import { AT, parseMoney } from "../_shared/alerts2.ts";
+import { QK, quickButtons, quickKeyboard } from "../_shared/quickkeys.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.45.4";
 import { derivedSecret, tg } from "../_shared/telegram.ts";
 import { accountChoices, accountKeyboard, convertAmount, parseQuick, pickAccount } from "../_shared/quick.ts";
@@ -23,8 +24,8 @@ const fmt = (n: number) => n.toFixed(2).replace(".", ",").replace(/\B(?=(\d{3})+
 const ok = () => new Response("ok");
 
 const HELP = {
-  ro: "Scrie-mi o cheltuială și o salvez:\n• <code>cafea 45</code>\n• <code>benzină 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+salariu 14200</code> (venit)\n\nPoți scrie mai multe, câte una pe rând. Contul: „cash” sau numele cardului; altfel se ia primul tău card, iar sub mesaj alegi alt cont cu un buton.\n\n<b>Sarcini</b>\n• <code>sarcină: schimbă uleiul vineri la 18:00</code>\n• <code>sarcină: plătește lumina 450 lei pe 15 pentru Ana</code>\n• <code>sarcină: udă florile în fiecare sâmbătă</code>\n• <code>cumpără: lapte, pâine 2, ouă</code>\n/sarcini — ce e deschis · /cumparaturi — lista",
-  ru: "Напишите расход, и я его сохраню:\n• <code>кофе 45</code>\n• <code>бензин 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+зарплата 14200</code> (доход)\n\nМожно несколько, по одному в строке. Счёт: «cash» или название карты; иначе первая ваша карта, а под сообщением можно выбрать другой счёт кнопкой.\n\n<b>Задачи</b>\n• <code>задача: поменять масло в пятницу в 18:00</code>\n• <code>задача: оплатить свет 450 лей до 15 для Анны</code>\n• <code>купить: молоко, хлеб 2, яйца</code>\n/sarcini — открытые задачи · /cumparaturi — список",
+  ro: "Scrie-mi o cheltuială și o salvez:\n• <code>cafea 45</code>\n• <code>benzină 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+salariu 14200</code> (venit)\n\nPoți scrie mai multe, câte una pe rând. Contul: „cash” sau numele cardului; altfel se ia primul tău card, iar sub mesaj alegi alt cont cu un buton.\n\n<b>Sarcini</b>\n• <code>sarcină: schimbă uleiul vineri la 18:00</code>\n• <code>sarcină: plătește lumina 450 lei pe 15 pentru Ana</code>\n• <code>sarcină: udă florile în fiecare sâmbătă</code>\n• <code>cumpără: lapte, pâine 2, ouă</code>\n/sarcini — ce e deschis · /cumparaturi — lista · /butoane — butoane rapide cu cheltuielile dese",
+  ru: "Напишите расход, и я его сохраню:\n• <code>кофе 45</code>\n• <code>бензин 900 cash</code>\n• <code>linella 385,50 maib</code>\n• <code>20€ revolut netflix</code>\n• <code>+зарплата 14200</code> (доход)\n\nМожно несколько, по одному в строке. Счёт: «cash» или название карты; иначе первая ваша карта, а под сообщением можно выбрать другой счёт кнопкой.\n\n<b>Задачи</b>\n• <code>задача: поменять масло в пятницу в 18:00</code>\n• <code>задача: оплатить свет 450 лей до 15 для Анны</code>\n• <code>купить: молоко, хлеб 2, яйца</code>\n/sarcini — открытые задачи · /cumparaturi — список · /butoane — быстрые кнопки с частыми расходами",
 };
 
 async function memberByTelegram(tgId: number) {
@@ -324,7 +325,23 @@ Deno.serve(async (req) => {
     await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: HELP[ru ? "ru" : "ro"], parse_mode: "HTML" });
     return ok();
   }
-  if (text.startsWith("/")) return ok();
+  // ── Butoane rapide: cheltuielile cele mai dese, ca tastatură sub câmpul de scris ──
+  if (member && (text.startsWith("/butoane") || text === QK.ro.hide || text === QK.ru.hide)) {
+    const lgq = ru ? "ru" : "ro";
+    if (!text.startsWith("/")) {
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: QK[lgq].hidden, reply_markup: { remove_keyboard: true } });
+      return ok();
+    }
+    const since = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    const { data: recent } = await db.from("transactions").select("merchant, amount, date, accounts!transactions_account_id_fkey(currency)")
+      .eq("family_id", member.family_id).eq("kind", "expense").eq("member_id", member.id).is("debt_id", null).is("recurring_id", null).gte("date", since).limit(1000);
+    // deno-lint-ignore no-explicit-any
+    const labels = quickButtons(((recent ?? []) as any[]).map((x) => ({ merchant: x.merchant, amount: Number(x.amount), date: x.date, currency: x.accounts?.currency ?? "MDL" })));
+    if (!labels.length) await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: QK[lgq].none });
+    else await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: QK[lgq].shown, reply_markup: quickKeyboard(labels, QK[lgq].hide) });
+    return ok();
+  }
+  if (text.startsWith("/") && !/^\/(sarcini|tasks|zadachi|cumparaturi|shop|pokupki)/i.test(text)) return ok();
   if (!member) {
     await tg(BOT_TOKEN, "sendMessage", { chat_id: chatId, text: ru ? "У вас нет доступа к семейному бюджету." : "Nu ai acces la bugetul familiei." });
     return ok();

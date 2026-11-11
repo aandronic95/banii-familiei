@@ -1,4 +1,6 @@
 <script setup>
+import CatSuggest from '../components/CatSuggest.vue'
+import { catSuggestions } from '../store.js'
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { S, accountById, balances, categoryById, toMdl, txCurrency, tagStats, activeAccounts } from '../store.js'
@@ -88,6 +90,7 @@ const groups = computed(() => {
       <h1 class="h-title">{{ acc ? acc.name : cat ? catName(cat) : tag ? '#' + tag : uncat ? t('noCategory') : t('transactions') }}</h1>
       <button v-if="acc" type="button" class="bf-btn bf-btn--secondary" style="min-height: 40px;" @click="router.push('/account/' + acc.id)">{{ t('edit') }}</button>
     </div>
+    <div v-if="uncat && catSuggestions.length" class="bf-card"><CatSuggest /></div>
 
     <div v-if="acc" class="bf-card">
       <div class="bf-balance__label">{{ acc.bank || t(acc.type === 'card' ? 'cards' : acc.type === 'cash' ? 'cash' : 'deposits') }}</div>

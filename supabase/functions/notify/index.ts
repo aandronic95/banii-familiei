@@ -10,6 +10,7 @@ import { advance, askKeyboard, dueDate, RT } from "../_shared/recurring.ts";
 import { addPayout, convert, payKeyboard, PT } from "../_shared/payouts.ts";
 import { behindText, type Commit, newCommits, releaseText, UPSTREAM } from "../_shared/release.ts";
 import { AT, lowBalance, paceAlerts } from "../_shared/alerts2.ts";
+import { allowanceDue } from "../_shared/allowance.ts";
 import { accruedInterest, couponDates, duePayouts } from "../_shared/invest.ts";
 import { nextEventDate, turning } from "../_shared/home.ts";
 import { nowLocalHM, taskButtons, taskLine, T as TT } from "../_shared/tasks.ts";
@@ -283,6 +284,41 @@ async function daily(today: string) {
       const d = daysBetween(today, next.due);
       if ((d === 3 || d === 0) && (await once(`loan:${l.id}:${next.n}:${d}`))) {
         await send(members, "loans", (lg) => T[lg].loan(l.name, fmt(next.payment), l.currency, d, next.due.split("-").reverse().join(".")));
+      }
+    }
+
+    // Bani de buzunar: suma săptămânală intră în pușculiță (transfer de pe contul ales, dacă e unul)
+    {
+      const { data: alw } = await db.from("goals").select("*").eq("family_id", f.id).eq("done", false).gt("allowance", 0);
+      for (const g of alw ?? []) {
+        const due: string[] = allowanceDue({ amount: g.allowance, weekday: g.allowance_weekday, last: g.allowance_last }, today);
+        let last = g.allowance_last as string | null, saved = Number(g.saved), added = 0;
+        for (const d of due) {
+          // lacăt: mutăm data doar dacă n-a mutat-o altă rulare
+          let q = db.from("goals").update({ allowance_last: d }).eq("id", g.id);
+          q = last ? q.eq("allowance_last", last) : q.is("allowance_last", null);
+          const { data: ok } = await q.select("id");
+          if (!ok?.length) break;
+          last = d;
+          const from = (famAccs ?? []).find((a) => a.id === g.allowance_from && !a.archived);
+          const amt = Number(g.allowance);
+          if (g.account_id) {
+            if (from) await db.from("transactions").insert({ family_id: f.id, kind: "transfer", amount: amt, account_id: from.id, to_account_id: g.account_id, date: d, member_id: g.member_id, merchant: g.name, note: "Bani de buzunar" });
+            else await db.from("transactions").insert({ family_id: f.id, kind: "income", amount: amt, account_id: g.account_id, date: d, member_id: g.member_id, merchant: g.name, note: "Bani de buzunar" });
+          } else {
+            saved = Math.round((saved + amt) * 100) / 100;
+            await db.from("goals").update({ saved }).eq("id", g.id);
+            if (from) await db.from("transactions").insert({ family_id: f.id, kind: "invest", amount: amt, account_id: from.id, date: d, member_id: g.member_id, merchant: g.name, note: "Bani de buzunar" });
+          }
+          added += amt;
+        }
+        if (added > 0) {
+          let total = saved;
+          if (g.account_id) { const { data: b } = await db.from("account_balances").select("balance").eq("account_id", g.account_id).maybeSingle(); total = Number(b?.balance ?? 0); }
+          await send(members, "allowance", (lg) => lg === "ru"
+            ? `🐷 «${g.name}»: +${fmt(added)} ${g.currency} карманных денег. В копилке: ${fmt(total)} ${g.currency}.`
+            : `🐷 „${g.name}”: +${fmt(added)} ${g.currency} bani de buzunar. În pușculiță: ${fmt(total)} ${g.currency}.`);
+        }
       }
     }
 
@@ -735,6 +771,14 @@ async function monthly(today: string) {
       if (down) lines.push(L.mDown(down.name, Math.abs(down.p!)));
       return lines.join("\n");
     });
+    // Închiderea lunii: memento cu lista de verificat din aplicație
+    for (const m of members) {
+      if (m.notify?.monthly === false) continue;
+      const ru = m.lang === "ru";
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id,
+        text: ru ? "✅ Закройте месяц: 2 минуты на проверку категорий, дублей и остатков — и отчёты будут верными." : "✅ Închide luna: 2 minute pentru categorii, dubluri și solduri — și rapoartele sunt corecte.",
+        reply_markup: { inline_keyboard: [[{ text: ru ? "Закрыть месяц" : "Închide luna", web_app: { url: `${APP_URL}?view=close` } }]] } });
+    }
   }
 }
 

@@ -88,6 +88,7 @@ watch(() => S.status, (st) => {
   else if (deep.rec && uuid.test(deep.rec)) router.push({ path: '/tx/new', query: { rec: deep.rec } })
   else if (deep.view === 'shopping') router.push({ path: '/tasks', query: { tab: 'shopping' } })
   else if (deep.view === 'tasks') router.push('/tasks')
+  else if (deep.view === 'close') router.push('/close')
   deep.tx = deep.task = deep.view = deep.rec = null
 }, { immediate: true })
 

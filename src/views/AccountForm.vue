@@ -2,7 +2,7 @@
 import { CURRENCIES, FX } from '../lib/currencies.js'
 import { reactive, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { S, save, remove, balances, accountById, assetNow } from '../store.js'
+import { S, save, remove, balances, accountById, assetNow, adjustBalance } from '../store.js'
 import { t } from '../lib/i18n.js'
 import { parseAmount, money, money0, todayISO } from '../lib/format.js'
 import { assetValue } from '../lib/invest.js'
@@ -13,6 +13,16 @@ const route = useRoute()
 const router = useRouter()
 const isNew = route.params.id === 'new'
 const orig = isNew ? null : accountById(route.params.id)
+// „Banca arată altă sumă”: scrii soldul real, diferența se trece ca o corectare
+const real = ref('')
+const fixing = ref(false)
+const nowBal = computed(() => (orig ? balances.value[orig.id] ?? 0 : 0))
+const realDiff = computed(() => { const v = parseAmount(real.value); return real.value.trim() === '' || !(v >= 0) ? null : Math.round((v - nowBal.value) * 100) / 100 })
+async function fixBalance() {
+  if (realDiff.value === null || Math.abs(realDiff.value) < 0.005) return
+  fixing.value = true
+  try { const d = await adjustBalance(orig, parseAmount(real.value)); real.value = ''; haptic('success'); toast(t('balFixed', (d > 0 ? '+' : '−') + money(Math.abs(d)), orig.currency)) } catch (e) { console.error(e); toast(t('error', e)) } finally { fixing.value = false }
+}
 const f = reactive({
   name: orig?.name ?? '',
   type: orig?.type ?? (route.query.type || 'card'),
@@ -144,6 +154,14 @@ async function del() {
       <div class="bf-row__body"><div class="bf-row__title">{{ t('archive') }}</div></div>
       <input id="a-arch" v-model="f.archived" type="checkbox" class="sw">
     </label>
+    <div v-if="!isNew && orig.type !== 'asset'" class="bf-card stack">
+      <div class="kv"><b>{{ t('balTitle') }}</b><span class="muted">{{ t('balApp', money(nowBal), orig.currency) }}</span></div>
+      <div class="fld"><label for="a-real">{{ t('balReal', orig.currency) }}</label><input id="a-real" v-model="real" class="inp" inputmode="decimal" :placeholder="money(nowBal)"></div>
+      <p v-if="realDiff !== null && Math.abs(realDiff) >= 0.005" class="hint" style="margin: 0;">{{ realDiff < 0 ? t('balLess', money(-realDiff), orig.currency) : t('balMore', money(realDiff), orig.currency) }}</p>
+      <p v-else-if="realDiff !== null" class="hint" style="margin: 0; color: var(--income);">✓ {{ t('balSame') }}</p>
+      <button type="button" class="bf-btn bf-btn--secondary" :disabled="fixing || realDiff === null || Math.abs(realDiff) < 0.005" @click="fixBalance">{{ t('balFix') }}</button>
+    </div>
+
     <button v-if="!isNew" type="button" class="bf-btn bf-btn--danger" @click="del">{{ t('delete') }}</button>
     <p v-if="err" class="err">{{ err }}</p>
 

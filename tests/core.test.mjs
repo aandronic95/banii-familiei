@@ -780,3 +780,42 @@ test('calendarul .ics: evenimente pe zi întreagă, anual, rânduri scurte', { s
   for (const line of s.split('\r\n')) assert.ok(new TextEncoder().encode(line).length <= 75, line)
   assert.ok(s.endsWith('END:VCALENDAR\r\n'))
 })
+
+test('luna asta față de trecuta, categorii propuse, bani de buzunar', async () => {
+  const { monthCompare, suggestCategories, allowanceDue } = await import('../src/lib/monthly.js')
+  const m = monthCompare([
+    { date: '2026-11-03', mdl: 900, category_id: 'food' }, { date: '2026-11-10', mdl: 300, category_id: 'car' },
+    { date: '2026-10-05', mdl: 500, category_id: 'food' }, { date: '2026-10-11', mdl: 320, category_id: 'car' },
+    { date: '2026-10-25', mdl: 5000, category_id: 'food' }, // după ziua 11: nu intră
+  ], '2026-11-11')
+  assert.deepEqual([m.cur, m.prev, m.diff, Math.round(m.pct * 100)], [1200, 820, 380, 46])
+  assert.deepEqual(m.rows.map((r) => [r.category_id, r.diff]), [['food', 400]])
+  const s = suggestCategories(
+    [{ id: 1, kind: 'expense', merchant: 'LINELLA SRL 12' }, { id: 2, kind: 'expense', merchant: 'Necunoscut' }, { id: 3, kind: 'expense', merchant: 'Petrom' }],
+    [{ kind: 'expense', merchant: 'Linella', category_id: 'food' }, { kind: 'expense', merchant: 'linella', category_id: 'food' }, { kind: 'expense', merchant: 'Linella', category_id: 'home' }],
+    (txt) => (/petrom/i.test(txt) ? 'car' : null))
+  assert.deepEqual(s.map((x) => [x.tx.id, x.category_id, x.sure]), [[1, 'food', true], [3, 'car', false]])
+  // sâmbăta (6): 14 nov. 2026 e sâmbătă
+  assert.deepEqual(allowanceDue({ amount: 50, weekday: 6, last: '2026-10-31' }, '2026-11-14'), ['2026-11-07', '2026-11-14'])
+  assert.deepEqual(allowanceDue({ amount: 50, weekday: 6, last: '2026-11-14' }, '2026-11-16'), [])
+  assert.deepEqual(allowanceDue({ amount: 50, weekday: 6, last: null }, '2026-11-11'), ['2026-11-07'])
+  assert.deepEqual(allowanceDue({ amount: 0, weekday: 6 }, '2026-11-14'), [])
+})
+
+const qkTs = await import('../supabase/functions/_shared/quickkeys.ts').catch((e) => { console.error(e); return null })
+test('butoane rapide în bot: cele mai dese cheltuieli', { skip: !qkTs || !quickTs }, () => {
+  const tx = (merchant, amount, date, currency = 'MDL') => ({ merchant, amount, date, currency })
+  const b = qkTs.quickButtons([tx('Cafea', 45, '2026-11-01'), tx('Cafea', 45, '2026-11-02'), tx('cafea', 45, '2026-11-03'), tx('Taxi', 80, '2026-11-01'), tx('Taxi', 80, '2026-11-05'),
+    tx('Linella', 385.5, '2026-11-01'), tx('Netflix', 9.99, '2026-10-01', 'EUR'), tx('Netflix', 9.99, '2026-11-01', 'EUR'), tx('Bloc 12', 5, '2026-11-01'), tx('Bloc 12', 5, '2026-11-02')])
+  assert.deepEqual(b, ['Cafea 45', 'Taxi 80', 'Netflix 9,99€'])
+  for (const l of b) { const q = quickTs.parseQuick(l); assert.ok(q && q.amount > 0 && q.description, l) }
+  assert.equal(quickTs.parseQuick('Netflix 9,99€').currency, 'EUR')
+  assert.equal(qkTs.quickKeyboard(b, 'x').keyboard.length, 3)
+})
+
+test('allowance.ts e copia exactă a allowance.js', async () => {
+  const fs = await import('node:fs')
+  const a = fs.readFileSync(new URL('../src/lib/allowance.js', import.meta.url), 'utf8')
+  const b = fs.readFileSync(new URL('../supabase/functions/_shared/allowance.ts', import.meta.url), 'utf8')
+  assert.equal(b.split('\n').slice(1).join('\n'), a)
+})
