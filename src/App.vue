@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { S, start, refreshIfStale, enterDemo, exitDemo, demoWanted } from './store.js'
 import { tg, initTelegram, setBack, setChrome, BOT_USERNAME } from './lib/telegram.js'
 import { authenticate, bioState } from './lib/biometric.js'
-import { isLockEnabled, isBioEnabled, setLockEnabled, pinVerify, pinForgot, pinReset } from './lib/lock.js'
+import { isLockEnabled, isBioEnabled, setLockEnabled, pinVerify, pinForgot, pinReset, pinStatus } from './lib/lock.js'
 import PinPad from './components/PinPad.vue'
 import { t, lang } from './lib/i18n.js'
 import TabBar from './components/TabBar.vue'
@@ -19,6 +19,13 @@ const theme = ref('light')
 // Blocare: Face ID (dacă e pornit și merge) sau codul de rezervă, verificat pe server.
 // Se cere la deschidere și după 2 minute în fundal.
 const locked = ref(isLockEnabled() && !demoWanted())
+// Pe un dispozitiv nou (calculator, alt telefon) blocarea nu e știută local: întrebăm serverul dacă ai cod
+// și nu arătăm nimic până nu aflăm
+const lockChecking = ref(!locked.value && !demoWanted())
+pinStatus().then((r) => {
+  if (r?.hasPin) { setLockEnabled(true); locked.value = true }
+  else if (r && !r.error && isLockEnabled()) { setLockEnabled(false); locked.value = false } // codul a fost șters de pe alt dispozitiv
+}).finally(() => { lockChecking.value = false })
 const lockErr = ref('')
 const lockBusy = ref(false)
 const bioOk = ref(false)
@@ -101,7 +108,8 @@ watch(() => [route.fullPath, S.status], () => {
 </script>
 
 <template>
-  <div v-if="locked" class="gate">
+  <div v-if="lockChecking && S.status === 'ready'" class="gate" aria-busy="true"><div><div class="spinner" role="status" :aria-label="t('loading')"></div></div></div>
+  <div v-else-if="locked" class="gate">
     <PinPad :title="resetMode ? t('pinResetTitle') : t('lockLocked')" :sub="resetMode ? t('pinForgotSent') : ''" :length="resetMode ? 6 : 4"
             :error="lockErr" :busy="lockBusy" :show-bio="bioOk && !resetMode" :show-forgot="!resetMode" @done="tryPin" @bio="tryBio" @forgot="forgot" />
   </div>
