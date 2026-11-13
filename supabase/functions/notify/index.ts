@@ -598,6 +598,31 @@ async function salaryNotice(today: string) {
   }
 }
 
+// Sold sub pragul ales pe cont: o alertă la coborâre, rearmată după suplinire (rulează la 15 minute)
+async function lowAccounts() {
+  const { data: accs } = await db.from("accounts").select("id, family_id, name, currency, low_alert, low_sent").not("low_alert", "is", null).eq("archived", false);
+  if (!accs?.length) return;
+  const { data: bals } = await db.from("account_balances").select("account_id, balance").in("account_id", accs.map((a) => a.id));
+  for (const a of accs) {
+    const bal = Number((bals ?? []).find((b) => b.account_id === a.id)?.balance ?? 0);
+    const low = bal < Number(a.low_alert);
+    if (low === a.low_sent) continue;
+    // lacăt: doar o rulare schimbă starea
+    const { data: ch } = await db.from("accounts").update({ low_sent: low }).eq("id", a.id).eq("low_sent", a.low_sent).select("id");
+    if (!ch?.length || !low) continue;
+    const { data: mem } = await db.from("members").select("telegram_id, lang, notify").eq("family_id", a.family_id).in("role", ["owner", "editor"]).not("telegram_id", "is", null);
+    for (const m of mem ?? []) {
+      if (m.notify?.lowacc === false) continue;
+      const ru = m.lang === "ru";
+      const v = (n: number) => n.toFixed(2).replace(".", ",");
+      await tg(BOT_TOKEN, "sendMessage", { chat_id: m.telegram_id,
+        text: ru ? `🔻 На «${a.name}» осталось ${v(bal)} ${a.currency} — меньше порога ${v(Number(a.low_alert))}. Пополните счёт заранее.`
+          : `🔻 Pe „${a.name}” au rămas ${v(bal)} ${a.currency} — sub pragul de ${v(Number(a.low_alert))}. Suplinește contul din timp.`,
+        reply_markup: { inline_keyboard: [[{ text: ru ? "Открыть" : "Deschide", web_app: { url: APP_URL } }]] } });
+    }
+  }
+}
+
 async function evening(today: string) {
   await salaryNotice(today).catch((e) => console.error("salariu", e));
   if (!eveningWindow(nowLocalHM())) return;
@@ -806,7 +831,7 @@ Deno.serve(async (req) => {
   if (task === "weekly") await weekly(today);
   else if (task === "monthly") await monthly(today);
   else if (task === "evening") await evening(today);
-  else if (task === "remind") { await tasksRemind(today); await salaryNotice(today).catch((e) => console.error("salariu", e)); }
+  else if (task === "remind") { await tasksRemind(today); await salaryNotice(today).catch((e) => console.error("salariu", e)); await lowAccounts().catch((e) => console.error("prag", e)); }
   else {
     await daily(today);
     await fxAlerts(today).catch((e) => console.error("fx", e));

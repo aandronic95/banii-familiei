@@ -29,6 +29,7 @@ const f = reactive({
   currency: orig?.currency ?? 'MDL',
   member_id: orig?.member_id ?? '',
   bank: orig?.bank ?? '',
+  low_alert: orig?.low_alert != null ? String(Number(orig.low_alert)) : '',
   last4: orig?.last4 ?? '',
   current: orig ? String(Math.round((balances.value[orig.id] ?? 0) * 100) / 100).replace('.', ',') : '',
   interest_rate: orig?.interest_rate ?? '',
@@ -71,6 +72,7 @@ async function submit() {
     await save('accounts', {
       ...(orig ? { id: orig.id } : { sort: S.accounts.length + 1 }),
       name: f.name.trim(), type: f.type, currency: f.currency, member_id: f.member_id || null,
+      low_alert: f.type !== 'asset' && parseAmount(f.low_alert) > 0 ? parseAmount(f.low_alert) : null,
       bank: f.bank.trim() || null, last4: f.last4.replace(/\D/g, '').slice(-4) || null, opening_balance: opening,
       interest_rate: f.type === 'deposit' && f.interest_rate !== '' ? parseAmount(f.interest_rate) : null,
       maturity_date: f.type === 'deposit' && f.maturity_date ? f.maturity_date : null,
@@ -154,6 +156,12 @@ async function del() {
       <div class="bf-row__body"><div class="bf-row__title">{{ t('archive') }}</div></div>
       <input id="a-arch" v-model="f.archived" type="checkbox" class="sw">
     </label>
+    <div v-if="f.type !== 'asset'" class="fld">
+      <label for="a-low">{{ t('lowAlert', f.currency) }}</label>
+      <input id="a-low" v-model="f.low_alert" class="inp" inputmode="decimal" :placeholder="t('lowAlertPh')">
+      <p class="hint" style="margin: 0;">{{ t('lowAlertHint') }}</p>
+    </div>
+
     <div v-if="!isNew && orig.type !== 'asset'" class="bf-card stack">
       <div class="kv"><b>{{ t('balTitle') }}</b><span class="muted">{{ t('balApp', money(nowBal), orig.currency) }}</span></div>
       <div class="fld"><label for="a-real">{{ t('balReal', orig.currency) }}</label><input id="a-real" v-model="real" class="inp" inputmode="decimal" :placeholder="money(nowBal)"></div>
