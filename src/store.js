@@ -578,6 +578,19 @@ export function depositLive(a, now = Date.now()) {
   return { accrued: liveAccrued(bal, a.interest_rate, since, end, now), perDay: end != null && end < now ? 0 : perDay(bal, a.interest_rate) }
 }
 
+// Dobânda câștigată de la începutul investiției până acum (plătită + strânsă de la ultima plată)
+export function earnedInterest(i, li = liveInfo(i), v = liveInvestValue(i), now = Date.now()) {
+  if (!li) return 0
+  const amount = Number(i.amount)
+  if (i.current_value == null && ACCRUING.includes(i.kind)) return liveAccrued(amount, i.rate, msOf(i.start_date), msOf(i.maturity_date), now)
+  if (i.current_value == null && i.kind === 'p2p') {
+    const a = annuityInfo(amount, i.rate, i.start_date, i.maturity_date, todayISO())
+    if (a) return a.interestPaid + (v - li.base)
+  }
+  // valoare scrisă de mână: creșterea față de suma investită, plus ce s-a strâns de atunci
+  return Math.max(0, (i.current_value != null ? Number(i.current_value) - amount : 0)) + (v - li.base)
+}
+
 // Totalul care „crește acum”, în MDL
 export function growthAt(now = Date.now()) {
   let accrued = 0, daily = 0, invest = 0
@@ -586,8 +599,8 @@ export function growthAt(now = Date.now()) {
     invest += toMdl(v, i.currency)
     const li = liveInfo(i)
     if (!li) continue
-    // la obligațiuni: toată dobânda de la cumpărare; la P2P: ce s-a adunat de la ultima plată / actualizare
-    accrued += toMdl(ACCRUING.includes(i.kind) && i.current_value == null ? v - Number(i.amount) : v - li.base, i.currency)
+    // Toată dobânda câștigată de la cumpărare până acum, inclusiv cupoanele / ratele deja primite
+    accrued += toMdl(earnedInterest(i, li, v, now), i.currency)
     if (!i.maturity_date || msOf(i.maturity_date) > now) daily += toMdl(perDay(li.base, i.rate), i.currency)
   }
   let deposit = 0
